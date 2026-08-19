@@ -1,26 +1,32 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient.js';
+import { useAuthContext } from './AuthContext.jsx';
 
 const CampagneContext = createContext(null);
 
 export function CampagneProvider({ children }) {
+  const { loading: authLoading } = useAuthContext();
   const [campagnes, setCampagnes] = useState([]);
   const [campagneActive, setCampagneActive] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
     supabase
       .from('campagnes')
       .select('*')
       .order('annee', { ascending: false })
       .then(({ data }) => {
+        if (cancelled) return;
         setCampagnes(data || []);
-        // Par défaut : la campagne au statut "active", sinon la plus récente
         const active = data?.find((c) => c.statut === 'active') || data?.[0] || null;
         setCampagneActive(active);
         setLoading(false);
-      });
-  }, []);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [authLoading]);
 
   return (
     <CampagneContext.Provider value={{ campagnes, campagneActive, setCampagneActive, loading }}>

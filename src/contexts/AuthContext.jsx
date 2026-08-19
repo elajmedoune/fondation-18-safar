@@ -16,12 +16,18 @@ export function AuthProvider({ children }) {
       setRoles([]);
       return;
     }
-    const [{ data: membreData }, { data: rolesData }] = await Promise.all([
-      supabase.from('membres').select('*').eq('user_id', userId).maybeSingle(),
-      supabase.from('user_roles').select('*').eq('user_id', userId)
-    ]);
-    setMembre(membreData || null);
-    setRoles(rolesData || []);
+    try {
+      const [{ data: membreData }, { data: rolesData }] = await Promise.all([
+        supabase.from('membres').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('user_roles').select('*').eq('user_id', userId)
+      ]);
+      setMembre(membreData || null);
+      setRoles(rolesData || []);
+    } catch (err) {
+      console.error('loadProfil error:', err);
+      setMembre(null);
+      setRoles([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -43,7 +49,11 @@ export function AuthProvider({ children }) {
     supabase.auth.signInWithPassword({ email, password });
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('signOut error:', err);
+    }
     clearScrollPositions();
     sessionStorage.clear();
   };

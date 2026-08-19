@@ -146,7 +146,7 @@ export const membresService = {
       .select('*')
       .or(`numero_membre.ilike.%${query}%,nom.ilike.%${query}%,prenom.ilike.%${query}%,telephone.ilike.%${query}%`)
       .limit(limit);
-    if (excludeIds.length > 0) q = q.not('user_id', 'in', `(${excludeIds.join(',')})`);
+    if (excludeIds.length > 0) q = q.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
     const { data, error } = await q;
     if (error) throw error;
     return data;

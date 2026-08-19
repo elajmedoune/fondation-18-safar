@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { ArrowLeft, FileDown, FileSpreadsheet, UserPlus, X, Search } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
@@ -118,7 +115,10 @@ export default function GroupeDetail() {
 
   const slug = groupe.nom.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'), import('jspdf-autotable')
+    ]);
     const rows = buildRows();
     const doc = new jsPDF();
     doc.setFontSize(14);
@@ -149,7 +149,8 @@ export default function GroupeDetail() {
     doc.save(`groupe-${slug}.pdf`);
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    const XLSX = await import('xlsx');
     const rows = buildRows().map((r) => ({
       'N° membre': r.numero,
       'Nom': r.nom,

@@ -184,6 +184,7 @@ const ROLE_ICONS = {
   secretaire: { icon: Users, color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' },
   president: { icon: Calendar, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' },
   administrateur: { icon: Shield, color: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' },
+  membre: { icon: Users, color: 'text-gray-600 bg-gray-50 dark:bg-gray-900/20' },
 };
 
 const STORAGE_KEY = 'f18s-ai-chat';

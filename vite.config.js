@@ -9,6 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo.jpeg', 'carte.jpeg'],
       workbox: {
+        navigateFallback: '/index.html',
+        navigateFallbackAllowlist: [/^\/.*/],
+        navigationPreload: false,
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,woff2}'],
         runtimeCaching: [

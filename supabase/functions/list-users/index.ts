@@ -27,20 +27,20 @@ Deno.serve(async (req) => {
     const { data: { user } } = await supabaseUser.auth.getUser();
     if (!user) throw new Error('Session invalide');
 
-    const { data: callerRoles } = await supabaseUser
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('role', 'administrateur');
-
-    if (!callerRoles || callerRoles.length === 0) {
-      throw new Error('Seul un administrateur peut voir la liste des comptes');
-    }
-
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL'),
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     );
+
+    const { data: callerRoles } = await supabaseAdmin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .in('role', ['administrateur', 'president']);
+
+    if (!callerRoles || callerRoles.length === 0) {
+      throw new Error('Seul un administrateur ou président peut voir la liste des comptes');
+    }
 
     // Liste des comptes auth (paginé par défaut à 50 -> on prend une grande page)
     const { data: authList, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
