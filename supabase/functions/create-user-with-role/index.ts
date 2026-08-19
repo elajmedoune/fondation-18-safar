@@ -1,0 +1,94 @@
+// supabase/functions/create-user-with-role/index.ts
+//
+// Reçoit : email, numero_membre, nom, prenom, telephone, role, campagne_id, groupe_id
+// Fait :
+//   1. Envoie une invitation par email (le compte auth.users est créé automatiquement)
+//   2. Crée la ligne "membres" liée à ce compte
+//   3. Attribue le rôle demandé dans "user_roles"
+//
+// Sécurité : n'accepte la requête que si l'appelant est lui-même administrateur
+// (vérifié via son token, avant d'utiliser la clé service_role).
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) throw new Error('Non authentifié');
+
+    // Client "au nom de l'appelant" pour vérifier qu'il est bien admin
+    const supabaseUser = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_ANON_KEY'),
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: userErr } = await supabaseUser.auth.getUser();
+    if (userErr || !user) throw new Error('Session invalide');
+
+    const { data: callerRoles } = await supabaseUser
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'administrateur');
+
+    if (!callerRoles || callerRoles.length === 0) {
+      throw new Error("Seul un administrateur peut créer un utilisateur");
+    }
+
+    const body = await req.json();
+    const { email, nom, prenom, telephone, role, campagne_id, groupe_id } = body;
+
+    if (!email || !nom || !prenom || !role) {
+      throw new Error('Champs manquants');
+    }
+
+    // Client admin (clé service_role, jamais exposée au navigateur)
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    );
+
+    // 1. Invitation email -> crée le compte auth.users et envoie le lien de connexion
+    const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    if (inviteErr) throw inviteErr;
+
+    const newUserId = invited.user.id;
+
+    // 2. Créer le membre (numero_membre non fourni -> généré automatiquement par la DB)
+    const { error: membreErr } = await supabaseAdmin.from('membres').insert({
+      user_id: newUserId,
+      nom,
+      prenom,
+      telephone: telephone || null
+    });
+    if (membreErr) throw membreErr;
+
+    // 3. Attribuer le rôle
+    const { error: roleErr } = await supabaseAdmin.from('user_roles').insert({
+      user_id: newUserId,
+      role,
+      campagne_id: campagne_id || null,
+      groupe_id: groupe_id || null
+    });
+    if (roleErr) throw roleErr;
+
+    return new Response(JSON.stringify({ success: true, user_id: newUserId }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400
+    });
+  }
+});
