@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Bell, Check, CheckCheck, Trash2, X, Info, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
+import { Bell, Check, CheckCheck, Trash2, X, Info, AlertTriangle, CheckCircle2, Zap, BellOff, Filter } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { notificationsService } from '../../services/notifications.service.js';
 import { supabase } from '../../lib/supabaseClient.js';
 
@@ -11,6 +12,12 @@ const TYPE_ICONS = {
   warning: { icon: AlertTriangle, color: 'text-amber-500' },
   action: { icon: Zap, color: 'text-purple-500' },
 };
+
+const TOGGLE_KEY = 'f18s-notif-enabled';
+
+function getNotifEnabled() {
+  try { return localStorage.getItem(TOGGLE_KEY) !== 'false'; } catch { return true; }
+}
 
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -25,24 +32,35 @@ function timeAgo(iso) {
 
 export default function NotificationBell() {
   const { user } = useAuth();
+  const { campagneActive } = useCampagneContext();
   const queryClient = useQueryClient();
   const btnRef = useRef(null);
   const panelRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 8 });
+  const [notifEnabled, setNotifEnabled] = useState(getNotifEnabled);
+  const [filterCampagne, setFilterCampagne] = useState(true);
+
+  const campagneId = filterCampagne ? campagneActive?.id : null;
 
   const { data: unreadCount = 0 } = useQuery({
-    queryKey: ['notif-count', user?.id],
-    queryFn: () => notificationsService.countUnread(user.id),
-    enabled: !!user?.id,
+    queryKey: ['notif-count', user?.id, campagneId],
+    queryFn: () => notificationsService.countUnread(user.id, campagneId),
+    enabled: !!user?.id && notifEnabled,
     refetchInterval: 30000,
   });
 
   const { data: notifications = [] } = useQuery({
-    queryKey: ['notifications', user?.id],
-    queryFn: () => notificationsService.listByUser(user.id, { limit: 30 }),
-    enabled: !!user?.id && open,
+    queryKey: ['notifications', user?.id, campagneId],
+    queryFn: () => notificationsService.listByUser(user.id, { limit: 30, campagneId }),
+    enabled: !!user?.id && open && notifEnabled,
   });
+
+  const toggleNotifEnabled = () => {
+    const next = !notifEnabled;
+    setNotifEnabled(next);
+    try { localStorage.setItem(TOGGLE_KEY, String(next)); } catch {}
+  };
 
   const updatePosition = useCallback(() => {
     if (!btnRef.current) return;
@@ -56,20 +74,20 @@ export default function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !notifEnabled) return;
     const channel = supabase
       .channel('notif-bell')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
         () => {
-          queryClient.invalidateQueries({ queryKey: ['notif-count', user.id] });
-          queryClient.invalidateQueries({ queryKey: ['notifications', user.id] });
+          queryClient.invalidateQueries({ queryKey: ['notif-count'] });
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id, queryClient]);
+  }, [user?.id, queryClient, notifEnabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,8 +111,8 @@ export default function NotificationBell() {
   }, []);
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['notif-count', user.id] });
-    queryClient.invalidateQueries({ queryKey: ['notifications', user.id] });
+    queryClient.invalidateQueries({ queryKey: ['notif-count'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
   };
 
   const handleMarkRead = async (id) => { await notificationsService.markRead(id); invalidate(); };
@@ -115,8 +133,12 @@ export default function NotificationBell() {
         className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         title="Notifications"
       >
-        <Bell className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-        {unreadCount > 0 && (
+        {notifEnabled ? (
+          <Bell className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+        ) : (
+          <BellOff className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+        )}
+        {notifEnabled && unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white min-w-[18px] px-1">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -137,7 +159,7 @@ export default function NotificationBell() {
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-gray-500" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
-              {unreadCount > 0 && (
+              {notifEnabled && unreadCount > 0 && (
                 <span className="text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded-full">
                   {unreadCount}
                 </span>
@@ -160,9 +182,45 @@ export default function NotificationBell() {
             </div>
           </div>
 
+          {/* Controls */}
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20">
+            <button
+              onClick={toggleNotifEnabled}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                notifEnabled
+                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                  : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+              }`}
+              title={notifEnabled ? 'Désactiver les notifications' : 'Activer les notifications'}
+            >
+              {notifEnabled ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+              {notifEnabled ? 'Activées' : 'Désactivées'}
+            </button>
+            {campagneActive && (
+              <button
+                onClick={() => setFilterCampagne(!filterCampagne)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  filterCampagne
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                }`}
+                title={filterCampagne ? 'Voir toutes les campagnes' : `Filtrer sur ${campagneActive.nom || campagneActive.annee}`}
+              >
+                <Filter className="h-3 w-3" />
+                {filterCampagne ? (campagneActive.nom || `Campagne ${campagneActive.annee}`) : 'Toutes'}
+              </button>
+            )}
+          </div>
+
           {/* Notifications list */}
-          <div className="overflow-y-auto" style={{ maxHeight: isMobile ? 'calc(100vh - 52px)' : '24rem' }}>
-            {notifications.length === 0 ? (
+          <div className="overflow-y-auto" style={{ maxHeight: isMobile ? 'calc(100vh - 96px)' : '22rem' }}>
+            {!notifEnabled ? (
+              <div className="py-8 text-center text-gray-400">
+                <BellOff className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">Notifications désactivées</p>
+                <button onClick={toggleNotifEnabled} className="mt-2 text-xs text-primary-600 hover:underline">Activer</button>
+              </div>
+            ) : notifications.length === 0 ? (
               <div className="py-8 text-center text-gray-400">
                 <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs">Aucune notification</p>

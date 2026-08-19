@@ -16,7 +16,7 @@ export const notificationsService = {
   },
 
   // Lister les notifs d'un utilisateur
-  async listByUser(userId, { unreadOnly = false, limit = 50 } = {}) {
+  async listByUser(userId, { unreadOnly = false, limit = 50, campagneId = null } = {}) {
     let q = supabase
       .from('notifications')
       .select('*')
@@ -24,18 +24,21 @@ export const notificationsService = {
       .order('created_at', { ascending: false })
       .limit(limit);
     if (unreadOnly) q = q.eq('lu', false);
+    if (campagneId) q = q.eq('campagne_id', campagneId);
     const { data, error } = await q;
     if (error) return [];
     return data || [];
   },
 
   // Compter les notifs non lues
-  async countUnread(userId) {
-    const { count, error } = await supabase
+  async countUnread(userId, campagneId = null) {
+    let q = supabase
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('lu', false);
+    if (campagneId) q = q.eq('campagne_id', campagneId);
+    const { count, error } = await q;
     if (error) return 0;
     return count || 0;
   },
