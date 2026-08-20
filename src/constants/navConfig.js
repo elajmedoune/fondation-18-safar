@@ -36,7 +36,6 @@ export const NAV_ITEMS = {
     { label: 'Rapports', to: '/rapports', icon: 'FileText' },
     { label: 'Assistant IA', to: '/assistant-ia', icon: 'Bot' },
     { label: 'Administration', to: '/admin/utilisateurs', icon: 'Settings' },
-    { label: 'Campagnes', to: '/admin/campagnes', icon: 'CalendarRange' },
     { label: 'Traçabilité', to: '/admin/traçabilite', icon: 'History' },
   ],
   [ROLES.ADMINISTRATEUR]: [
@@ -54,7 +53,6 @@ export const NAV_ITEMS = {
     { label: 'Cartes', to: '/membres/cartes', icon: 'CreditCard' },
     { label: 'Assistant IA', to: '/assistant-ia', icon: 'Bot' },
     { label: 'Administration', to: '/admin/utilisateurs', icon: 'Settings' },
-    { label: 'Campagnes', to: '/admin/campagnes', icon: 'CalendarRange' },
     { label: 'Traçabilité', to: '/admin/traçabilite', icon: 'History' },
   ]
 };
