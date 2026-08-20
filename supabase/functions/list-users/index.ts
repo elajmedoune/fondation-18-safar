@@ -16,7 +16,12 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Non authentifié');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Non authentifié' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401
+      });
+    }
 
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL'),
@@ -25,7 +30,12 @@ Deno.serve(async (req) => {
     );
 
     const { data: { user } } = await supabaseUser.auth.getUser();
-    if (!user) throw new Error('Session invalide');
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Session invalide' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401
+      });
+    }
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL'),
@@ -39,7 +49,10 @@ Deno.serve(async (req) => {
       .in('role', ['administrateur', 'president']);
 
     if (!callerRoles || callerRoles.length === 0) {
-      throw new Error('Seul un administrateur ou président peut voir la liste des comptes');
+      return new Response(JSON.stringify({ error: 'Seul un administrateur ou président peut voir la liste des comptes' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403
+      });
     }
 
     // Liste des comptes auth (paginé par défaut à 50 -> on prend une grande page)
@@ -67,7 +80,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400
+      status: 500
     });
   }
 });
