@@ -153,16 +153,24 @@ export const membresService = {
 
   async searchForGroupe(campagneId, query, limit = 10) {
     if (!query || query.trim().length < 2) return [];
-    const q = `%${query.trim()}%`;
-    const { data, error } = await supabase
+    const q = query.trim();
+    const { data: membres, error: mErr } = await supabase
+      .from('membres')
+      .select('id')
+      .or(`nom.ilike.%${q}%,prenom.ilike.%${q}%,numero_membre.ilike.%${q}%,telephone.ilike.%${q}%`)
+      .limit(limit * 2);
+    if (mErr) throw mErr;
+    const membreIds = (membres || []).map((m) => m.id);
+    if (membreIds.length === 0) return [];
+    const { data: cm, error: cmErr } = await supabase
       .from('campagne_membres')
       .select('id, membre:membres(id, nom, prenom, numero_membre, telephone)')
       .eq('campagne_id', campagneId)
       .is('groupe_id', null)
-      .or(`membre.nom.ilike.${q},membre.prenom.ilike.${q},membre.numero_membre.ilike.${q},membre.telephone.ilike.${q}`)
+      .in('membre_id', membreIds)
       .limit(limit);
-    if (error) throw error;
-    return (data || []).map((cm) => ({ ...cm.membre, campagne_membre_id: cm.id }));
+    if (cmErr) throw cmErr;
+    return (cm || []).map((row) => ({ ...row.membre, campagne_membre_id: row.id }));
   },
 
   async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {
