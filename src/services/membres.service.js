@@ -156,21 +156,11 @@ export const membresService = {
     const q = query.trim();
     const { data: membres, error: mErr } = await supabase
       .from('membres')
-      .select('id')
+      .select('id, nom, prenom, numero_membre, telephone')
       .or(`nom.ilike.%${q}%,prenom.ilike.%${q}%,numero_membre.ilike.%${q}%,telephone.ilike.%${q}%`)
-      .limit(limit * 2);
-    if (mErr) throw mErr;
-    const membreIds = (membres || []).map((m) => m.id);
-    if (membreIds.length === 0) return [];
-    const { data: cm, error: cmErr } = await supabase
-      .from('campagne_membres')
-      .select('id, membre:membres(id, nom, prenom, numero_membre, telephone)')
-      .eq('campagne_id', campagneId)
-      .is('groupe_id', null)
-      .in('membre_id', membreIds)
       .limit(limit);
-    if (cmErr) throw cmErr;
-    return (cm || []).map((row) => ({ ...row.membre, campagne_membre_id: row.id }));
+    if (mErr) throw mErr;
+    return membres || [];
   },
 
   async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {

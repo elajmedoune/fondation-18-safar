@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User, Settings, LogOut, ChevronDown } from 'lucide-react';
+import { User, Settings, CalendarRange, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 
@@ -74,6 +74,15 @@ export default function ProfileMenu() {
             >
               <Settings size={16} /> Paramètres
             </Link>
+            {(rolePrincipal === 'administrateur' || rolePrincipal === 'president') && (
+              <Link
+                to="/admin/campagnes"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                <CalendarRange size={16} /> Campagnes
+              </Link>
+            )}
           </div>
 
           <div className="py-1 border-t border-gray-100 dark:border-gray-800">
