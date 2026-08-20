@@ -134,7 +134,6 @@ export const membresService = {
 
   async search(query, limit = 8) {
     if (!query || query.trim().length < 2) return [];
-    // Exclure l'admin principal (role administrateur, campagne_id = null)
     const { data: adminRoles } = await supabase
       .from('user_roles')
       .select('user_id')
@@ -150,6 +149,20 @@ export const membresService = {
     const { data, error } = await q;
     if (error) throw error;
     return data;
+  },
+
+  async searchForGroupe(campagneId, query, limit = 10) {
+    if (!query || query.trim().length < 2) return [];
+    const q = `%${query.trim()}%`;
+    const { data, error } = await supabase
+      .from('campagne_membres')
+      .select('id, membre:membres(id, nom, prenom, numero_membre, telephone)')
+      .eq('campagne_id', campagneId)
+      .is('groupe_id', null)
+      .or(`membre.nom.ilike.${q},membre.prenom.ilike.${q},membre.numero_membre.ilike.${q},membre.telephone.ilike.${q}`)
+      .limit(limit);
+    if (error) throw error;
+    return (data || []).map((cm) => ({ ...cm.membre, campagne_membre_id: cm.id }));
   },
 
   async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {

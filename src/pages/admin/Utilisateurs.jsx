@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Shield, UserX, UserCheck, Search, Mail, CalendarRange, CheckCircle, Clock, Archive, Pencil } from 'lucide-react';
+import { Plus, X, Shield, UserX, UserCheck, Search, Mail } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { membresService } from '../../services/membres.service.js';
 import { rolesService } from '../../services/roles.service.js';
-import { campagnesService } from '../../services/campagnes.service.js';
 import { ROLES } from '../../constants/roles.js';
 import { supabase } from '../../lib/supabaseClient.js';
 
@@ -23,16 +22,6 @@ const ROLE_COLORS = {
   administrateur: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
 };
 
-const STATUT_CAMPAGNE = {
-  preparation: { label: 'En préparation', icon: Clock, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  active: { label: 'Active', icon: CheckCircle, cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  cloturee: { label: 'Clôturée', icon: Archive, cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' }
-};
-
-function formatFCFA(n) {
-  return new Intl.NumberFormat('fr-FR').format(Number(n || 0)) + ' FCFA';
-}
-
 async function extractErrorMessage(error) {
   try {
     const body = await error.context.json();
@@ -47,7 +36,7 @@ const selectCls = "rounded-lg border border-gray-300 dark:border-gray-700 bg-whi
 const cardCls = "rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 shadow-sm";
 
 export default function Utilisateurs() {
-  const { campagneActive, setCampagneActive } = useCampagneContext();
+  const { campagneActive } = useCampagneContext();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
 
@@ -67,31 +56,10 @@ export default function Utilisateurs() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  const [showCampagneForm, setShowCampagneForm] = useState(false);
-  const [cAnnee, setCAnnee] = useState('');
-  const [cNom, setCNom] = useState('');
-  const [cDate, setCDate] = useState('');
-  const [cObj, setCObj] = useState('');
-  const [cHomme, setCHomme] = useState('');
-  const [cFemme, setCFemme] = useState('');
-  const [creatingCampagne, setCreatingCampagne] = useState(false);
-  const [editingCampagneId, setEditingCampagneId] = useState(null);
-  const [editObj, setEditObj] = useState('');
-  const [editHomme, setEditHomme] = useState('');
-  const [editFemme, setEditFemme] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [busyId, setBusyId] = useState(null);
-
   const [editingUser, setEditingUser] = useState(null);
   const [editRoleValue, setEditRoleValue] = useState(ROLES.TRESORIER);
 
-  const { data: campagnes = [], isLoading: loadingCampagnes } = useQuery({
-    queryKey: ['campagnes'],
-    queryFn: campagnesService.list
-  });
-
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['campagnes'] });
     queryClient.invalidateQueries({ queryKey: ['user_roles'] });
     queryClient.invalidateQueries({ queryKey: ['comptes'] });
   };
@@ -210,191 +178,12 @@ export default function Utilisateurs() {
 
   const adminSansProfilActif = accRole === ROLES.ADMINISTRATEUR && sansProfil;
 
-  const handleCreateCampagne = async (e) => {
-    e.preventDefault();
-    setCreatingCampagne(true);
-    try {
-      await campagnesService.create({
-        annee: Number(cAnnee), nom: cNom, dateEvenement: cDate,
-        objectifGlobal: Number(cObj) || 0,
-        cotisationHomme: Number(cHomme) || 0,
-        cotisationFemme: Number(cFemme) || 0
-      }, currentUser.id);
-      setCAnnee(''); setCNom(''); setCDate(''); setCObj(''); setCHomme(''); setCFemme('');
-      setShowCampagneForm(false);
-      refresh();
-    } catch (err) { alert(err.message); } finally { setCreatingCampagne(false); }
-  };
-
-  const startEditCampagne = (c) => {
-    setEditingCampagneId(c.id);
-    setEditObj(c.objectif_global || '');
-    setEditHomme(c.cotisation_homme || '');
-    setEditFemme(c.cotisation_femme || '');
-  };
-
-  const handleSaveCampagne = async (c) => {
-    setSavingEdit(true);
-    try {
-      await campagnesService.update(c.id, {
-        nom: c.nom, dateEvenement: c.date_evenement,
-        objectifGlobal: Number(editObj) || 0,
-        cotisationHomme: Number(editHomme) || 0,
-        cotisationFemme: Number(editFemme) || 0
-      }, { userId: currentUser.id });
-      setEditingCampagneId(null);
-      refresh();
-    } catch (err) { alert(err.message); } finally { setSavingEdit(false); }
-  };
-
-  const handleActiverCampagne = async (c) => {
-    setBusyId(c.id);
-    try { const updated = await campagnesService.activer(c.id, currentUser.id); setCampagneActive(updated); refresh(); }
-    catch (err) { alert(err.message); } finally { setBusyId(null); }
-  };
-
-  const handleCloturerCampagne = async (c) => {
-    if (!confirm(`Clôturer "${c.nom}" ?`)) return;
-    setBusyId(c.id);
-    try { await campagnesService.cloturer(c.id, currentUser.id); refresh(); }
-    catch (err) { alert(err.message); } finally { setBusyId(null); }
-  };
-
   return (
     <div className="space-y-8 max-w-2xl mx-auto pb-8">
       <div>
         <h1 className="text-lg font-semibold flex items-center gap-2"><Shield className="h-5 w-5" /> Administration</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Gestion des campagnes, utilisateurs et rôles.</p>
+        <p className="text-sm text-gray-500 mt-0.5">Gestion des utilisateurs et rôles.</p>
       </div>
-
-      {/* ── CAMPAGNES ── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide">
-            <CalendarRange className="h-3.5 w-3.5" /> Campagnes
-          </h2>
-          <button
-            onClick={() => setShowCampagneForm(!showCampagneForm)}
-            className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
-          >
-            {showCampagneForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-            {showCampagneForm ? 'Annuler' : 'Nouvelle'}
-          </button>
-        </div>
-
-        {showCampagneForm && (
-          <form onSubmit={handleCreateCampagne} className={`${cardCls} p-4 space-y-3`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input placeholder="Année (ex: 2026)" type="number" value={cAnnee} onChange={(e) => setCAnnee(e.target.value)} required className={inputCls} />
-              <input placeholder="Nom (ex: 18 Safar 1447)" value={cNom} onChange={(e) => setCNom(e.target.value)} required className={inputCls} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Date de l'événement</label>
-              <input type="date" value={cDate} onChange={(e) => setCDate(e.target.value)} required className={inputCls} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Objectif global (FCFA)</label>
-              <input type="number" min="0" value={cObj} onChange={(e) => setCObj(e.target.value)} placeholder="Ex: 5000000" className={inputCls} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Cotisation homme (FCFA)</label>
-                <input type="number" min="0" value={cHomme} onChange={(e) => setCHomme(e.target.value)} placeholder="Ex: 100000" className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Cotisation femme (FCFA)</label>
-                <input type="number" min="0" value={cFemme} onChange={(e) => setCFemme(e.target.value)} placeholder="Ex: 50000" className={inputCls} />
-              </div>
-            </div>
-            <button type="submit" disabled={creatingCampagne} className="w-full rounded-lg bg-primary-700 text-white py-2.5 text-sm font-medium hover:bg-primary-800 disabled:opacity-50 transition">
-              {creatingCampagne ? 'Création...' : 'Créer la campagne'}
-            </button>
-          </form>
-        )}
-
-        {loadingCampagnes ? (
-          <p className="text-sm text-gray-500">Chargement...</p>
-        ) : campagnes.length === 0 ? (
-          <p className="text-sm text-gray-500">Aucune campagne.</p>
-        ) : (
-          <ul className={`divide-y divide-gray-200 dark:divide-gray-800 ${cardCls} overflow-hidden`}>
-            {campagnes.map((c) => {
-              const statut = STATUT_CAMPAGNE[c.statut] || STATUT_CAMPAGNE.preparation;
-              const StatusIcon = statut.icon;
-              const isActive = c.statut === 'active';
-              const isEditing = editingCampagneId === c.id;
-              return (
-                <li key={c.id} className={`px-4 py-3.5 space-y-2.5 ${isActive ? 'bg-green-50/60 dark:bg-green-900/10' : ''}`}>
-                  {/* Titre + statut */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{c.nom}</p>
-                      <p className="text-gray-500 text-xs">Année {c.annee} · {new Date(c.date_evenement).toLocaleDateString('fr-FR')}</p>
-                    </div>
-                    <span className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${statut.cls}`}>
-                      <StatusIcon className="h-3 w-3" /> <span className="hidden xs:inline">{statut.label}</span>
-                    </span>
-                  </div>
-
-                  {/* Stats / édition */}
-                  {!isEditing ? (
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                        <span>Objectif : <span className="font-medium text-gray-700 dark:text-gray-300">{formatFCFA(c.objectif_global)}</span></span>
-                        <span>Homme : <span className="font-medium text-gray-700 dark:text-gray-300">{formatFCFA(c.cotisation_homme)}</span></span>
-                        <span>Femme : <span className="font-medium text-gray-700 dark:text-gray-300">{formatFCFA(c.cotisation_femme)}</span></span>
-                      </div>
-                      <button onClick={() => startEditCampagne(c)} className="text-gray-400 hover:text-primary-600 shrink-0 p-1 -m-1" title="Modifier">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 pt-1">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Objectif</label>
-                          <input type="number" min="0" value={editObj} onChange={(e) => setEditObj(e.target.value)} className={`${inputCls} px-2 py-1.5 text-xs`} />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Homme</label>
-                          <input type="number" min="0" value={editHomme} onChange={(e) => setEditHomme(e.target.value)} className={`${inputCls} px-2 py-1.5 text-xs`} />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Femme</label>
-                          <input type="number" min="0" value={editFemme} onChange={(e) => setEditFemme(e.target.value)} className={`${inputCls} px-2 py-1.5 text-xs`} />
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleSaveCampagne(c)} disabled={savingEdit} className="flex-1 rounded-lg bg-primary-700 text-white py-2 text-xs font-medium hover:bg-primary-800 disabled:opacity-50">
-                          {savingEdit ? 'Enregistrement...' : 'Enregistrer'}
-                        </button>
-                        <button onClick={() => setEditingCampagneId(null)} className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-                          Annuler
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {!isEditing && (
-                    <div className="flex gap-2 pt-1">
-                      {!isActive && (
-                        <button onClick={() => handleActiverCampagne(c)} disabled={busyId === c.id} className="w-full sm:w-auto inline-flex items-center justify-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 disabled:opacity-50">
-                          <CheckCircle className="h-3 w-3" /> Activer
-                        </button>
-                      )}
-                      {isActive && (
-                        <button onClick={() => handleCloturerCampagne(c)} disabled={busyId === c.id} className="w-full sm:w-auto inline-flex items-center justify-center gap-1 text-xs rounded-lg border border-red-300 dark:border-red-800 text-red-600 px-3 py-1.5 font-medium hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50">
-                          <Archive className="h-3 w-3" /> Clôturer
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
 
       {/* ── UTILISATEURS ── */}
 
@@ -403,22 +192,14 @@ export default function Utilisateurs() {
           <h2 className="text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide">
             <Shield className="h-3.5 w-3.5" /> Utilisateurs & roles
           </h2>
-          {campagneActive && (
-            <button
-              onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
-              className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
-            >
-              {showForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-              {showForm ? 'Annuler' : 'Donner un accès'}
-            </button>
-          )}
+          <button
+            onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
+            className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
+          >
+            {showForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+            {showForm ? 'Annuler' : 'Donner un accès'}
+          </button>
         </div>
-
-        {!campagneActive && (
-          <p className="rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-sm px-4 py-3">
-            Aucune campagne active. Activez une campagne d'abord.
-          </p>
-        )}
 
       {showForm && (
         <section className={`${cardCls} p-4 space-y-3`}>

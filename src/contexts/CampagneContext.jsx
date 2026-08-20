@@ -5,13 +5,19 @@ import { useAuthContext } from './AuthContext.jsx';
 const CampagneContext = createContext(null);
 
 export function CampagneProvider({ children }) {
-  const { loading: authLoading } = useAuthContext();
+  const { loading: authLoading, session } = useAuthContext();
   const [campagnes, setCampagnes] = useState([]);
   const [campagneActive, setCampagneActive] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (authLoading) return;
+    if (!session) {
+      setCampagnes([]);
+      setCampagneActive(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     supabase
       .from('campagnes')
@@ -26,7 +32,7 @@ export function CampagneProvider({ children }) {
       })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [authLoading]);
+  }, [authLoading, session]);
 
   return (
     <CampagneContext.Provider value={{ campagnes, campagneActive, setCampagneActive, loading }}>

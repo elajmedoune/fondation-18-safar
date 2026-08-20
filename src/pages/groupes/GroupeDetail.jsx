@@ -62,9 +62,10 @@ export default function GroupeDetail() {
 
   const handleSearch = async (e) => {
     e.preventDefault();
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) return;
     setSearching(true);
     try {
-      const results = await membresService.search(searchQuery);
+      const results = await membresService.searchForGroupe(campagneActive.id, searchQuery);
       setSearchResults(results);
     } catch (err) {
       alert(err.message);

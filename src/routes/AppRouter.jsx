@@ -26,6 +26,7 @@ import ReunionDetail from '../pages/reunions/ReunionDetail.jsx';
 import Rapports from '../pages/rapports/Rapports.jsx';
 import Utilisateurs from '../pages/admin/Utilisateurs.jsx';
 import AuditTrail from '../pages/admin/AuditTrail.jsx';
+import CampagnesList from '../pages/campagnes/CampagnesList.jsx';
 import AIAssistant from '../pages/ai/AIAssistant.jsx';
 
 const FINANCE_ROLES = ['tresorier', 'president', 'administrateur'];
@@ -78,6 +79,7 @@ export default function AppRouter() {
 
           <Route element={<RoleRoute allowed={['administrateur', 'president']} />}>
             <Route path="/admin/utilisateurs" element={<Utilisateurs />} />
+            <Route path="/admin/campagnes" element={<CampagnesList />} />
             <Route path="/admin/traçabilite" element={<AuditTrail />} />
           </Route>
 
