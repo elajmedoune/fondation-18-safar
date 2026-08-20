@@ -4,6 +4,63 @@ import QRCode from 'qrcode.react';
 import { Camera, Loader2, ShieldCheck, Download } from 'lucide-react';
 import { membresService } from '../../services/membres.service.js';
 
+// Convertit une image distante (logo, photo Supabase) en data URL locale.
+// Nécessaire pour l'export : sur mobile, une image chargée depuis un autre
+// domaine peut faire échouer ou vider silencieusement la capture (CORS).
+// Une fois en data URL, l'image n'a plus besoin du réseau et n'a plus de
+// problème d'origine pour la capture.
+async function urlToDataUrl(url) {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Sauvegarde un PNG (fourni en data URL) sur l'appareil de l'utilisateur.
+// Sur mobile en PWA installée (surtout iOS Safari standalone), un <a download>
+// pointant vers une data/blob URL ne déclenche pas de téléchargement : le
+// navigateur essaie de "naviguer" vers cette URL, ce qui affiche une page
+// blanche à la place. Le Web Share API (menu de partage natif, avec
+// "Enregistrer l'image" / "Enregistrer dans Fichiers") est la méthode fiable
+// pour sauvegarder un fichier dans ce contexte. On revient au lien de
+// téléchargement classique si le partage de fichier n'est pas disponible
+// (desktop, anciens navigateurs).
+async function saveDataUrlAsFile(dataUrl, filename) {
+  const blob = await (await fetch(dataUrl)).blob();
+
+  if (navigator.canShare && navigator.share) {
+    const file = new File([blob], filename, { type: 'image/png' });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Carte de membre' });
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') return; // l'utilisateur a annulé le partage
+        // sinon on continue vers le fallback ci-dessous
+      }
+    }
+  }
+
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = blobUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+}
+
 export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhotoUpdated }) {
   const cardRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -43,6 +100,13 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
     try {
       const original = cardRef.current;
 
+      // Précharger logo + photo en data URL AVANT de cloner, pour que la
+      // capture n'ait plus besoin d'aller chercher ces images sur le réseau.
+      const [logoDataUrl, photoDataUrl] = await Promise.all([
+        urlToDataUrl('/logo.png'),
+        urlToDataUrl(membre.photo_url)
+      ]);
+
       // Clone the card node off-screen with fixed width
       const clone = original.cloneNode(true);
       clone.style.position = 'fixed';
@@ -64,6 +128,17 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
       clone.style.overflow = 'hidden';
       clone.style.backgroundColor = '#ffffff';
       clone.style.colorScheme = 'light';
+
+      // Remplace les src des images du clone par les versions en data URL
+      // (identifiées via data-export-role, pas par alt qui peut être vide/dupliqué)
+      if (logoDataUrl) {
+        const logoImg = clone.querySelector('img[data-export-role="logo"]');
+        if (logoImg) logoImg.src = logoDataUrl;
+      }
+      if (photoDataUrl) {
+        const photoImg = clone.querySelector('img[data-export-role="photo"]');
+        if (photoImg) photoImg.src = photoDataUrl;
+      }
 
       document.body.appendChild(clone);
 
@@ -93,10 +168,7 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
         filter: (node) => !node.dataset || node.dataset.noExport !== 'true'
       });
 
-      const link = document.createElement('a');
-      link.download = `carte-${membre.numero_membre || membre.id}.png`;
-      link.href = dataUrl;
-      link.click();
+      await saveDataUrlAsFile(dataUrl, `carte-${membre.numero_membre || membre.id}.png`);
     } catch (err) {
       console.error(err);
       alert("Erreur lors de l'export de la carte.");
@@ -127,6 +199,7 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
                 <img
                   src="/logo.png"
                   alt="Logo"
+                  data-export-role="logo"
                   crossOrigin="anonymous"
                   onError={() => setLogoFailed(true)}
                   className="h-full w-full object-contain p-1"
@@ -151,6 +224,7 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
                 <img
                   src={membre.photo_url}
                   alt=""
+                  data-export-role="photo"
                   crossOrigin="anonymous"
                   className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-sm"
                 />

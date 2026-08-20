@@ -48,6 +48,21 @@ export function AuthProvider({ children }) {
   const signInWithPassword = (email, password) =>
     supabase.auth.signInWithPassword({ email, password });
 
+  // Envoie l'email "mot de passe oublié". Le lien renvoie l'utilisateur vers
+  // /reinitialiser-mot-de-passe sur le domaine actuel (localhost, Vercel,
+  // domaine perso...) : cette URL doit être ajoutée dans Supabase ->
+  // Authentication -> URL Configuration -> Redirect URLs, sinon Supabase
+  // rejette le lien silencieusement même si l'email part correctement.
+  const resetPasswordForEmail = (email) =>
+    supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reinitialiser-mot-de-passe`
+    });
+
+  // Met à jour le mot de passe une fois l'utilisateur revenu depuis le lien
+  // reçu par email (Supabase a déjà établi une session temporaire à ce moment-là).
+  const updatePassword = (newPassword) =>
+    supabase.auth.updateUser({ password: newPassword });
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -73,6 +88,8 @@ export function AuthProvider({ children }) {
     roleNames: roles.map((r) => r.role),
     loading,
     signInWithPassword,
+    resetPasswordForEmail,
+    updatePassword,
     signOut,
     refreshRoles
   };

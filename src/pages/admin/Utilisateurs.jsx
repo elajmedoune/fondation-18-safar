@@ -7,6 +7,7 @@ import { membresService } from '../../services/membres.service.js';
 import { rolesService } from '../../services/roles.service.js';
 import { ROLES } from '../../constants/roles.js';
 import { supabase } from '../../lib/supabaseClient.js';
+import { invokeSafe } from '../../lib/invokeSafe.js';
 
 const ROLE_OPTIONS = [
   { value: ROLES.TRESORIER, label: 'Trésorier' },
@@ -78,13 +79,14 @@ export default function Utilisateurs() {
     queryFn: () => rolesService.listWithMembre()
   });
 
-  const { data: comptes = [], isLoading: loadingComptes } = useQuery({
+  const { data: comptes = [], isLoading: loadingComptes, isError: erreurComptes, refetch: refetchComptes } = useQuery({
     queryKey: ['comptes'],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('list-users');
+      const { data, error } = await invokeSafe('list-users');
       if (error) throw new Error(await extractErrorMessage(error));
       return data.users;
-    }
+    },
+    retry: 1
   });
 
   const resetForm = () => {
@@ -117,7 +119,7 @@ export default function Utilisateurs() {
       } else {
         body.nom = accNom; body.prenom = accPrenom; body.telephone = accTelephone || null; body.membre_groupe_id = accGroupeId || null;
       }
-      const { data, error } = await supabase.functions.invoke('create-user-with-role', { body });
+      const { data, error } = await invokeSafe('create-user-with-role', { body });
       if (error) throw new Error(await extractErrorMessage(error));
       if (data?.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: `Invitation envoyée à ${accEmail}.` });
@@ -142,7 +144,7 @@ export default function Utilisateurs() {
   const handleToggleBan = async (targetUserId, ban) => {
     if (!confirm(ban ? 'Désactiver ce compte ? Les données sont conservées.' : 'Réactiver ce compte ?')) return;
     try {
-      const { data, error } = await supabase.functions.invoke('toggle-user-ban', { body: { target_user_id: targetUserId, ban } });
+      const { data, error } = await invokeSafe('toggle-user-ban', { body: { target_user_id: targetUserId, ban } });
       if (error) throw new Error(await extractErrorMessage(error));
       if (data?.error) throw new Error(data.error);
       queryClient.invalidateQueries({ queryKey: ['comptes'] });
@@ -288,6 +290,15 @@ export default function Utilisateurs() {
         <h2 className="text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide"><Mail className="h-3.5 w-3.5" /> Comptes existants</h2>
         {loadingComptes ? (
           <p className="text-sm text-gray-500">Chargement...</p>
+        ) : erreurComptes ? (
+          <div className="rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 px-4 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-red-700 dark:text-red-400">
+              Impossible de charger les comptes (session expirée ?).
+            </p>
+            <button onClick={() => refetchComptes()} className="shrink-0 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+              Réessayer
+            </button>
+          </div>
         ) : (
           <ul className={`divide-y divide-gray-200 dark:divide-gray-800 ${cardCls} overflow-hidden`}>
             {comptes.map((c) => {

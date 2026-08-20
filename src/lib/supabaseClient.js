@@ -8,3 +8,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Correctif recommandé par Supabase pour les PWA / apps mobiles :
+// le rafraîchissement automatique du token repose sur un timer JS, que les
+// navigateurs mettent en pause quand l'app est en arrière-plan (app changée,
+// écran verrouillé...). Résultat : au retour au premier plan, le token peut
+// être expiré et les premiers appels échouent (400 "Session invalide") le
+// temps qu'un rafraîchissement se déclenche. On force explicitement l'arrêt/
+// la reprise du rafraîchissement selon la visibilité de la page.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+}

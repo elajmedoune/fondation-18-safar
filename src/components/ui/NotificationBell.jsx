@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Check, CheckCheck, Trash2, X, Info, AlertTriangle, CheckCircle2, Zap, BellOff, Filter } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth.js';
@@ -145,17 +146,17 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
-          className="fixed z-[100] bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm shadow-2xl shadow-gray-200/50 dark:shadow-black/30 overflow-hidden border border-gray-200/70 dark:border-gray-800"
+          className={`fixed z-[100] bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm shadow-2xl shadow-gray-200/50 dark:shadow-black/30 overflow-hidden border border-gray-200/70 dark:border-gray-800 ${isMobile ? 'flex flex-col' : ''}`}
           style={isMobile
-            ? { inset: 0, borderRadius: 0, maxHeight: '100vh' }
+            ? { inset: 0, borderRadius: 0, paddingBottom: 'env(safe-area-inset-bottom)' }
             : { top: pos.top, right: pos.right, width: 384, borderRadius: 16, maxHeight: '28rem' }
           }
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-gray-500" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
@@ -213,7 +214,7 @@ export default function NotificationBell() {
           </div>
 
           {/* Notifications list */}
-          <div className="overflow-y-auto" style={{ maxHeight: isMobile ? 'calc(100vh - 96px)' : '22rem' }}>
+          <div className={isMobile ? 'overflow-y-auto flex-1 min-h-0' : 'overflow-y-auto'} style={isMobile ? undefined : { maxHeight: '22rem' }}>
             {!notifEnabled ? (
               <div className="py-8 text-center text-gray-400">
                 <BellOff className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -261,7 +262,8 @@ export default function NotificationBell() {
               </ul>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
