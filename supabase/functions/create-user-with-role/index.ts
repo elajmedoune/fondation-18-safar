@@ -20,9 +20,14 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const json = (body, status) => new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status
+  });
+
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Non authentifié');
+    if (!authHeader) return json({ error: 'Non authentifié' }, 401);
 
     // Client "au nom de l'appelant" pour vérifier qu'il est bien admin
     const supabaseUser = createClient(
@@ -32,7 +37,7 @@ Deno.serve(async (req) => {
     );
 
     const { data: { user }, error: userErr } = await supabaseUser.auth.getUser();
-    if (userErr || !user) throw new Error('Session invalide');
+    if (userErr || !user) return json({ error: 'Session invalide' }, 401);
 
     const { data: callerRoles } = await supabaseUser
       .from('user_roles')
@@ -41,14 +46,14 @@ Deno.serve(async (req) => {
       .eq('role', 'administrateur');
 
     if (!callerRoles || callerRoles.length === 0) {
-      throw new Error("Seul un administrateur peut créer un utilisateur");
+      return json({ error: "Seul un administrateur peut créer un utilisateur" }, 403);
     }
 
     const body = await req.json();
     const { email, nom, prenom, telephone, role, campagne_id, groupe_id } = body;
 
     if (!email || !nom || !prenom || !role) {
-      throw new Error('Champs manquants');
+      return json({ error: 'Champs manquants' }, 400);
     }
 
     // Client admin (clé service_role, jamais exposée au navigateur)
@@ -81,14 +86,8 @@ Deno.serve(async (req) => {
     });
     if (roleErr) throw roleErr;
 
-    return new Response(JSON.stringify({ success: true, user_id: newUserId }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200
-    });
+    return json({ success: true, user_id: newUserId }, 200);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400
-    });
+    return json({ error: err.message }, 500);
   }
 });

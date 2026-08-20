@@ -213,25 +213,25 @@ export default function Utilisateurs() {
         <section className={`${cardCls} p-4 space-y-3`}>
           <h2 className="font-medium text-sm">Donner un accès (compte)</h2>
           <form onSubmit={handleSubmit} className="space-y-3">
-            <input type="email" placeholder="Email" value={accEmail} onChange={(e) => setAccEmail(e.target.value)} required className={inputCls} />
-            <select value={accRole} onChange={(e) => setAccRole(e.target.value)} className={selectCls}>
+            <input type="email" id="acc-email" name="acc-email" placeholder="Email" value={accEmail} onChange={(e) => setAccEmail(e.target.value)} required className={inputCls} />
+            <select id="acc-role" name="acc-role" value={accRole} onChange={(e) => setAccRole(e.target.value)} className={selectCls}>
               {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             {accRole === ROLES.ADMINISTRATEUR && (
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={sansProfil} onChange={(e) => setSansProfil(e.target.checked)} />
+                <input type="checkbox" id="sans-profil" name="sans-profil" checked={sansProfil} onChange={(e) => setSansProfil(e.target.checked)} />
                 Compte admin technique (pas de profil membre)
               </label>
             )}
             {!adminSansProfilActif && (
               <>
                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                  <label className="flex items-center gap-2"><input type="radio" checked={mode === 'existant'} onChange={() => setMode('existant')} /> Membre existant</label>
-                  <label className="flex items-center gap-2"><input type="radio" checked={mode === 'nouveau'} onChange={() => setMode('nouveau')} /> Nouveau membre</label>
+                  <label className="flex items-center gap-2"><input type="radio" id="mode-existant" name="mode-membre" checked={mode === 'existant'} onChange={() => setMode('existant')} /> Membre existant</label>
+                  <label className="flex items-center gap-2"><input type="radio" id="mode-nouveau" name="mode-membre" checked={mode === 'nouveau'} onChange={() => setMode('nouveau')} /> Nouveau membre</label>
                 </div>
                 {mode === 'existant' ? (
                   <div className="relative">
-                    <input type="text" placeholder="Nom, prénom ou numéro..." value={searchQuery} onChange={handleSearch} className={inputCls} />
+                    <input type="text" id="search-membre" name="search-membre" placeholder="Nom, prénom ou numéro..." value={searchQuery} onChange={handleSearch} className={inputCls} />
                     {searchResults.length > 0 && (
                       <ul className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg max-h-56 overflow-auto">
                         {searchResults.map((m) => (
@@ -247,10 +247,10 @@ export default function Utilisateurs() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input placeholder="Nom" value={accNom} onChange={(e) => setAccNom(e.target.value)} required className={inputCls} />
-                    <input placeholder="Prénom" value={accPrenom} onChange={(e) => setAccPrenom(e.target.value)} required className={inputCls} />
-                    <input placeholder="Téléphone" value={accTelephone} onChange={(e) => setAccTelephone(e.target.value)} className={`sm:col-span-2 ${inputCls}`} />
-                    <select value={accGroupeId} onChange={(e) => setAccGroupeId(e.target.value)} className={`sm:col-span-2 ${selectCls}`}>
+                    <input id="acc-nom" name="acc-nom" placeholder="Nom" value={accNom} onChange={(e) => setAccNom(e.target.value)} required className={inputCls} />
+                    <input id="acc-prenom" name="acc-prenom" placeholder="Prénom" value={accPrenom} onChange={(e) => setAccPrenom(e.target.value)} required className={inputCls} />
+                    <input id="acc-telephone" name="acc-telephone" placeholder="Téléphone" value={accTelephone} onChange={(e) => setAccTelephone(e.target.value)} className={`sm:col-span-2 ${inputCls}`} />
+                    <select id="acc-groupe" name="acc-groupe" value={accGroupeId} onChange={(e) => setAccGroupeId(e.target.value)} className={`sm:col-span-2 ${selectCls}`}>
                       <option value="">Groupe (optionnel)...</option>
                       {groupes.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
                     </select>
@@ -335,7 +335,7 @@ export default function Utilisateurs() {
                     <div className="flex items-center gap-2 shrink-0">
                       {isEditingThis ? (
                         <div className="flex items-center gap-1.5">
-                          <select value={editRoleValue} onChange={(e) => setEditRoleValue(e.target.value)} className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs">
+                          <select id="edit-role" name="edit-role" value={editRoleValue} onChange={(e) => setEditRoleValue(e.target.value)} className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs">
                             {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                           </select>
                           <button onClick={handleSaveRole} className="text-green-600 hover:underline text-xs font-medium">Valider</button>

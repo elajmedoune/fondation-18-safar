@@ -149,6 +149,8 @@ export default function AuditTrail() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="relative">
             <select
+              id="audit-action"
+              name="audit-action"
               value={selectedAction}
               onChange={(e) => { setSelectedAction(e.target.value); setPage(0); }}
               className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 pr-8 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
@@ -166,6 +168,8 @@ export default function AuditTrail() {
           </div>
           <div className="relative">
             <select
+              id="audit-user"
+              name="audit-user"
               value={selectedUser}
               onChange={(e) => { setSelectedUser(e.target.value); setPage(0); }}
               className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 pr-8 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/40"

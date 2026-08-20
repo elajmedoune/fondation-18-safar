@@ -14,9 +14,14 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const json = (body, status) => new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status
+  });
+
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Non authentifié');
+    if (!authHeader) return json({ error: 'Non authentifié' }, 401);
 
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL'),
@@ -25,7 +30,7 @@ Deno.serve(async (req) => {
     );
 
     const { data: { user } } = await supabaseUser.auth.getUser();
-    if (!user) throw new Error('Session invalide');
+    if (!user) return json({ error: 'Session invalide' }, 401);
 
     const { data: callerRoles } = await supabaseUser
       .from('user_roles')
@@ -34,14 +39,14 @@ Deno.serve(async (req) => {
       .eq('role', 'administrateur');
 
     if (!callerRoles || callerRoles.length === 0) {
-      throw new Error('Seul un administrateur peut modifier un compte');
+      return json({ error: 'Seul un administrateur peut modifier un compte' }, 403);
     }
 
     const { target_user_id, ban } = await req.json();
-    if (!target_user_id || typeof ban !== 'boolean') throw new Error('Paramètres manquants');
+    if (!target_user_id || typeof ban !== 'boolean') return json({ error: 'Paramètres manquants' }, 400);
 
     if (target_user_id === user.id) {
-      throw new Error('Impossible de désactiver ton propre compte');
+      return json({ error: 'Impossible de désactiver ton propre compte' }, 400);
     }
 
     const supabaseAdmin = createClient(
@@ -55,14 +60,8 @@ Deno.serve(async (req) => {
     });
     if (error) throw error;
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200
-    });
+    return json({ success: true }, 200);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400
-    });
+    return json({ error: err.message }, 500);
   }
 });
