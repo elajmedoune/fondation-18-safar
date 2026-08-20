@@ -44,18 +44,20 @@ Deno.serve(async (req) => {
 
     // Liste des comptes auth (paginé par défaut à 50 -> on prend une grande page)
     const { data: authList, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-    if (authErr) throw authErr;
+    if (authErr) throw new Error(`Erreur auth.admin.listUsers: ${authErr.message}`);
+
+    const users = authList?.users || [];
 
     const { data: membres } = await supabaseAdmin.from('membres').select('*');
     const { data: roles } = await supabaseAdmin.from('user_roles').select('*, groupe:groupes(nom)');
 
-    const result = authList.users.map((u) => ({
+    const result = users.map((u) => ({
       id: u.id,
       email: u.email,
       created_at: u.created_at,
       banned: !!u.banned_until && new Date(u.banned_until) > new Date(),
-      membre: membres.find((m) => m.user_id === u.id) || null,
-      roles: roles.filter((r) => r.user_id === u.id)
+      membre: membres?.find((m) => m.user_id === u.id) || null,
+      roles: roles?.filter((r) => r.user_id === u.id) || []
     }));
 
     return new Response(JSON.stringify({ users: result }), {

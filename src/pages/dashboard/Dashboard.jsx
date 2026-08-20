@@ -105,10 +105,22 @@ export default function Dashboard() {
   const { data: nbMembres } = useQuery({
     queryKey: ['dashboard-membres', campagneActive?.id],
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('campagne_membres')
-        .select('*', { count: 'exact', head: true })
-        .eq('campagne_id', campagneActive.id);
+      // Exclure les admins globaux (campagne_id = null) comme
+      // le fait getByCampagneAvecRoles dans MembresList
+      const { data: adminRoles } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'administrateur')
+        .is('campagne_id', null);
+      const excludeIds = (adminRoles || []).map((r) => r.user_id);
+
+      let q = supabase
+        .from('membres')
+        .select('*', { count: 'exact', head: true });
+      if (excludeIds.length > 0) {
+        q = q.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
+      }
+      const { count, error } = await q;
       if (error) throw error;
       return count;
     },

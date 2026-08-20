@@ -16,6 +16,8 @@ const ROLE_OPTIONS = [
   { value: ROLES.ADMINISTRATEUR, label: 'Administrateur' }
 ];
 
+const BUREAU_ROLES = [ROLES.PRESIDENT, ROLES.TRESORIER, ROLES.SECRETAIRE];
+
 const ROLE_COLORS = {
   tresorier: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   secretaire: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
@@ -78,6 +80,8 @@ export default function Utilisateurs() {
     queryKey: ['user_roles'],
     queryFn: () => rolesService.listWithMembre()
   });
+
+  const isAdmin = roles.some((r) => r.user_id === currentUser.id && r.role === ROLES.ADMINISTRATEUR);
 
   const { data: comptes = [], isLoading: loadingComptes, isError: erreurComptes, refetch: refetchComptes } = useQuery({
     queryKey: ['comptes'],
@@ -194,13 +198,15 @@ export default function Utilisateurs() {
           <h2 className="text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide">
             <Shield className="h-3.5 w-3.5" /> Utilisateurs & roles
           </h2>
-          <button
-            onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
-            className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
-          >
-            {showForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-            {showForm ? 'Annuler' : 'Donner un accès'}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
+              className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
+            >
+              {showForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+              {showForm ? 'Annuler' : 'Donner un accès'}
+            </button>
+          )}
         </div>
 
       {showForm && (
@@ -277,7 +283,7 @@ export default function Utilisateurs() {
                     <p className="text-gray-500 text-xs">{r.campagne_id ? 'campagne actuelle' : 'global'} {r.groupe?.nom ? `· ${r.groupe.nom}` : ''}</p>
                   </div>
                 </div>
-                  {r.user_id !== currentUser.id && (
+                {isAdmin && r.user_id !== currentUser.id && (
                     <button onClick={() => handleRemoveRole(r.id, r.membre ? `${r.membre.prenom} ${r.membre.nom}` : null)} className="self-start sm:self-auto text-red-600 hover:underline text-xs shrink-0">Retirer</button>
                 )}
               </li>
@@ -325,7 +331,7 @@ export default function Utilisateurs() {
                       </p>
                     </div>
                   </div>
-                  {!isSelf && (
+                  {!isSelf && isAdmin && (
                     <div className="flex items-center gap-2 shrink-0">
                       {isEditingThis ? (
                         <div className="flex items-center gap-1.5">

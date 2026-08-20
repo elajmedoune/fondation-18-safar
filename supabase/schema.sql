@@ -402,19 +402,23 @@ create policy "responsables_write" on campagne_groupe_responsables for all to au
   using (fn_has_role(array['administrateur','president']::role_systeme[], campagne_id))
   with check (fn_has_role(array['administrateur','president']::role_systeme[], campagne_id));
 
--- USER_ROLES : chacun voit ses propres rôles, admin voit/gère tout
-create policy "user_roles_select_self" on user_roles for select to authenticated
-  using (user_id = auth.uid() or fn_is_admin());
+-- USER_ROLES : chacun voit ses propres rôles, admin voit/gère tout,
+-- les rôles bureau (président, secrétaire, trésorier) voient tous les rôles
+-- (nécessaire pour l'enrichissement des membres dans getByCampagneAvecRoles)
+create policy "user_roles_select" on user_roles for select to authenticated
+  using (
+    user_id = auth.uid()
+    or fn_is_admin()
+    or fn_has_role(array['president','secretaire','tresorier']::role_systeme[])
+  );
 create policy "user_roles_write" on user_roles for all to authenticated
   using (fn_is_admin()) with check (fn_is_admin());
 
 -- FINANCES (cotisations, dons, quêtes, dépenses, objectifs, collecteurs) :
--- lecture réservée trésorier/président/admin, un membre voit ses propres cotisations
-create policy "cotisations_select" on cotisations for select to authenticated
-  using (
-    fn_has_role(array['tresorier','president','administrateur']::role_systeme[], campagne_id)
-    or membre_id = fn_get_membre_id()
-  );
+-- lecture ouverte à tout authentifié (nécessaire pour afficher la progression
+-- cotisations dans la liste membres), écriture réservée trésorier/admin
+create policy "cotisations_select_auth" on cotisations for select to authenticated
+  using (true);
 create policy "cotisations_write" on cotisations for all to authenticated
   using (fn_has_role(array['tresorier','administrateur']::role_systeme[], campagne_id))
   with check (fn_has_role(array['tresorier','administrateur']::role_systeme[], campagne_id));
