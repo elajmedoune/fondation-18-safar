@@ -10,6 +10,19 @@ import { membresService } from '../../services/membres.service.js';
 const selectCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
 const inputCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
 
+async function loadLogoBase64() {
+  try {
+    const res = await fetch('/logo.jpeg');
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
 export default function GroupeDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -117,12 +130,13 @@ export default function GroupeDetail() {
   const slug = groupe.nom.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
   const handleExportPdf = async () => {
-    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-      import('jspdf'), import('jspdf-autotable')
-    ]);
-    const rows = buildRows();
-    const doc = new jsPDF();
-    doc.setFontSize(14);
+    const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
+  loadLogoBase64(), import('jspdf'), import('jspdf-autotable')
+]);
+const rows = buildRows();
+const doc = new jsPDF();
+if (logo) { try { doc.addImage(logo, 'JPEG', 178, 10, 18, 18); } catch {} }
+doc.setFontSize(14);
     doc.text(`Groupe : ${groupe.nom}`, 14, 16);
     doc.setFontSize(10);
     doc.setTextColor(100);

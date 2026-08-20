@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Receipt, ShoppingCart, Wallet, TrendingDown, AlertTriangle, Trash2, Pencil, FileDown, ChevronDown } from 'lucide-react';
+import { Plus, X, Receipt, ShoppingCart, Wallet, TrendingDown, AlertTriangle, Trash2, Pencil } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { depensesService } from '../../services/depenses.service.js';
 import { objectifsService } from '../../services/objectifs.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import ExportMenu from '../../components/ui/ExportMenu.jsx';
 
 const CATEGORIES = ['Hygiène', 'Repas', 'Logistique', 'Transport', 'Sécurité', 'Ravitaillement', 'Installation', 'Autre'];
 
@@ -58,7 +59,6 @@ export default function Depenses() {
   const [editDescription, setEditDescription] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const [openExport, setOpenExport] = useState(false);
 
   const { data: depenses = [], isLoading } = useQuery({
     queryKey: ['depenses', campagneActive?.id],
@@ -200,17 +200,13 @@ export default function Depenses() {
         subtitle={`${depenses.length} depense${depenses.length !== 1 ? 's' : ''}`}
         action={
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button onClick={() => setOpenExport(openExport ? null : 'menu')} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-                <FileDown className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Exporter</span> <ChevronDown className="h-3 w-3" />
-              </button>
-              {openExport === 'menu' && (
-                <div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
-                  <button onClick={handleExportPDF} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors">PDF</button>
-                  <button onClick={handleExportExcel} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Excel</button>
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              label={<span className="hidden sm:inline">Exporter</span>}
+              items={[
+                { label: 'PDF', onClick: handleExportPDF, bold: true },
+                { label: 'Excel', onClick: handleExportExcel }
+              ]}
+            />
             <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
               {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouvelle'}</span>
@@ -220,33 +216,33 @@ export default function Depenses() {
       />
 
       {/* Solde */}
-      <div className={`rounded-2xl border p-4 sm:p-5 shadow-sm ${soldeNegatif ? 'border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-950/30' : 'border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50'}`}>
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 dark:bg-emerald-900/30 shrink-0">
-              <Wallet className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 dark:text-emerald-400" />
+      <div className={`rounded-2xl border p-3 sm:p-5 shadow-sm ${soldeNegatif ? 'border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-950/30' : 'border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50'}`}>
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-4">
+          <div className="flex flex-col items-center text-center gap-1 sm:flex-row sm:items-center sm:text-left sm:gap-3">
+            <div className="flex h-7 w-7 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 dark:bg-emerald-900/30 shrink-0">
+              <Wallet className="h-3.5 w-3.5 sm:h-5 sm:w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium">Recettes</p>
-              <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400 truncate">{formatFCFA(totalRecettes)}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-red-100 dark:bg-red-900/30 shrink-0">
-              <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium">Depenses</p>
-              <p className="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 truncate">{formatFCFA(totalDepenses)}</p>
+            <div className="min-w-0 w-full">
+              <p className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium truncate">Recettes</p>
+              <p className="text-[11px] sm:text-sm font-bold text-emerald-700 dark:text-emerald-400 truncate">{formatFCFA(totalRecettes)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl ${soldeNegatif ? 'bg-red-100 dark:bg-red-900/30' : 'bg-primary-100 dark:bg-primary-900/30'} shrink-0`}>
-              <Receipt className={`h-4 w-4 sm:h-5 sm:w-5 ${soldeNegatif ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-400'}`} />
+          <div className="flex flex-col items-center text-center gap-1 sm:flex-row sm:items-center sm:text-left sm:gap-3">
+            <div className="flex h-7 w-7 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-red-100 dark:bg-red-900/30 shrink-0">
+              <TrendingDown className="h-3.5 w-3.5 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium">Solde</p>
-              <p className={`text-xs sm:text-sm font-bold ${soldeNegatif ? 'text-red-600 dark:text-red-400' : 'text-primary-700 dark:text-primary-400'} truncate`}>{formatFCFA(solde)}</p>
+            <div className="min-w-0 w-full">
+              <p className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium truncate">Depenses</p>
+              <p className="text-[11px] sm:text-sm font-bold text-red-600 dark:text-red-400 truncate">{formatFCFA(totalDepenses)}</p>
+            </div>
+          </div>
+          <div className="flex flex-col items-center text-center gap-1 sm:flex-row sm:items-center sm:text-left sm:gap-3">
+            <div className={`flex h-7 w-7 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl ${soldeNegatif ? 'bg-red-100 dark:bg-red-900/30' : 'bg-primary-100 dark:bg-primary-900/30'} shrink-0`}>
+              <Receipt className={`h-3.5 w-3.5 sm:h-5 sm:w-5 ${soldeNegatif ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-400'}`} />
+            </div>
+            <div className="min-w-0 w-full">
+              <p className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 font-medium truncate">Solde</p>
+              <p className={`text-[11px] sm:text-sm font-bold ${soldeNegatif ? 'text-red-600 dark:text-red-400' : 'text-primary-700 dark:text-primary-400'} truncate`}>{formatFCFA(solde)}</p>
             </div>
           </div>
         </div>

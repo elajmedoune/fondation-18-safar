@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Pencil, Search, Plus, X, FileDown, ChevronDown, Filter, Users, Shield, Target, CalendarX, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Pencil, Search, Plus, X, Filter, Users, Shield, Target, CalendarX, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -9,6 +9,7 @@ import { membresService } from '../../services/membres.service.js';
 import { supabase } from '../../lib/supabaseClient.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import ExportMenu from '../../components/ui/ExportMenu.jsx';
 
 const inputCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 w-full focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 transition-all";
 const selectCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 w-full focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 transition-all";
@@ -64,7 +65,6 @@ export default function MembresList() {
 
   const [q, setQ] = usePersistedState('mem-q', '');
   const [showForm, setShowForm] = usePersistedState('mem-showForm', false);
-  const [openExport, setOpenExport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   const [filterBureau, setFilterBureau] = usePersistedState('mem-fbureau', false);
@@ -289,17 +289,13 @@ export default function MembresList() {
         subtitle={`${filtered.length} membre${filtered.length !== 1 ? 's' : ''}${activeFilterCount > 0 ? ` (${activeFilterCount} filtre${activeFilterCount > 1 ? 's' : ''})` : ''}`}
         action={
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button onClick={() => setOpenExport(openExport ? null : 'menu')} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-                <FileDown className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Exporter</span> <ChevronDown className="h-3 w-3" />
-              </button>
-              {openExport === 'menu' && (
-                <div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
-                  <button onClick={handleExportPDF} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors">PDF</button>
-                  <button onClick={handleExportExcel} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Excel</button>
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              label={<span className="hidden sm:inline">Exporter</span>}
+              items={[
+                { label: 'PDF', onClick: handleExportPDF, bold: true },
+                { label: 'Excel', onClick: handleExportExcel }
+              ]}
+            />
             {canCreateMembre && (
               <button
                 onClick={() => { setShowForm(!showForm); resetForm(); }}

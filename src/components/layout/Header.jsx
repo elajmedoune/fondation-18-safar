@@ -15,7 +15,7 @@ export default function Header() {
   const { campagnes, campagneActive, setCampagneActive, loading } = useCampagneContext();
 
   return (
-    <header className="print:hidden shrink-0 flex items-center justify-between border-b border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md px-4 sm:px-6 py-3 relative z-40">
+    <header className="print:hidden shrink-0 flex items-center justify-between border-b border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md px-4 sm:px-6 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] relative z-40">
       <Link to="/tableau-de-bord" className="md:hidden flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-700 text-white shadow-sm shadow-primary-700/30">
           <Landmark size={16} />

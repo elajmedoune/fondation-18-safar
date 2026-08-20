@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Gift, Heart, FileDown, ChevronDown } from 'lucide-react';
+import { Plus, X, Gift, Heart } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { donsService } from '../../services/dons.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import ExportMenu from '../../components/ui/ExportMenu.jsx';
 
 function formatFCFA(n) {
   return new Intl.NumberFormat('fr-FR').format(Number(n || 0)) + ' FCFA';
@@ -50,7 +51,6 @@ export default function Dons() {
   const [note, setNote] = usePersistedState('dons-note', '');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const [openExport, setOpenExport] = useState(false);
 
   const { data: dons = [], isLoading } = useQuery({
     queryKey: ['dons', campagneActive?.id],
@@ -146,17 +146,13 @@ export default function Dons() {
         subtitle={`${dons.length} don${dons.length !== 1 ? 's' : ''} · Total ${formatFCFA(total)}`}
         action={
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button onClick={() => setOpenExport(openExport ? null : 'menu')} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-                <FileDown className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Exporter</span> <ChevronDown className="h-3 w-3" />
-              </button>
-              {openExport === 'menu' && (
-                <div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
-                  <button onClick={handleExportPDF} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors">PDF</button>
-                  <button onClick={handleExportExcel} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Excel</button>
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              label={<span className="hidden sm:inline">Exporter</span>}
+              items={[
+                { label: 'PDF', onClick: handleExportPDF, bold: true },
+                { label: 'Excel', onClick: handleExportExcel }
+              ]}
+            />
             <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
               {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouveau'}</span>
