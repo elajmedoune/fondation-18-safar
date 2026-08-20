@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Wallet, Banknote, FileDown, Calendar, ChevronDown, Pencil, Trash2 } from 'lucide-react';
+import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2 } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
+import ExportMenu from '../../components/ui/ExportMenu.jsx';
 
 const MODES_PAIEMENT = [
   { value: 'especes', label: 'Espèces' },
@@ -82,7 +83,6 @@ export default function Cotisations() {
   const [editNote, setEditNote] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const [openDropdown, setOpenDropdown] = useState(null);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['cotisations', ca.id] });
@@ -220,7 +220,7 @@ export default function Cotisations() {
     doc.text(`${allCotisations.length} cotisation(s) - Total : ${formatFCFApdf(totalAll)}`, 14, 25);
     doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5); doc.line(14, 30, 196, 30);
 
-    let startY = 32;
+    let startY = 40;
     cotisationsParMois.forEach(([mois, rows]) => {
       const moisTotal = rows.reduce((s, r) => s + Number(r.montant), 0);
       if (startY > 250) { doc.addPage(); startY = 15; }
@@ -323,36 +323,32 @@ export default function Cotisations() {
         subtitle={`${allCotisations.length} cotisation${allCotisations.length !== 1 ? 's' : ''} · Total ${formatFCFA(total)}`}
         action={
           <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-            <div className="relative">
-              <button onClick={() => setOpenDropdown(openDropdown === 'pdf' ? null : 'pdf')} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-2.5 sm:px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-                <FileDown className="h-3.5 w-3.5 shrink-0" /> PDF <ChevronDown className="h-3 w-3 shrink-0" />
-              </button>
-              {openDropdown === 'pdf' && (
-                <div className="absolute z-20 mt-1 w-56 max-w-[85vw] left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl overflow-hidden max-h-64 overflow-y-auto">
-                  <button onClick={() => { handleExportAllPDF(); setOpenDropdown(null); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors">Tous les mois</button>
-                  {cotisationsParMois.map(([mois, rows]) => (
-                    <button key={mois} onClick={() => { handleExportMonthPDF(mois, rows); setOpenDropdown(null); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                      {getMonthLabel(mois)} <span className="text-gray-400 text-xs">({rows.length})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="relative">
-              <button onClick={() => setOpenDropdown(openDropdown === 'excel' ? null : 'excel')} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-2.5 sm:px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-                <FileDown className="h-3.5 w-3.5 shrink-0" /> Excel <ChevronDown className="h-3 w-3 shrink-0" />
-              </button>
-              {openDropdown === 'excel' && (
-                <div className="absolute z-20 mt-1 w-56 max-w-[85vw] left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl overflow-hidden max-h-64 overflow-y-auto">
-                  <button onClick={() => { handleExportAllExcel(); setOpenDropdown(null); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors">Tous les mois</button>
-                  {cotisationsParMois.map(([mois, rows]) => (
-                    <button key={mois} onClick={() => { handleExportMonthExcel(mois, rows); setOpenDropdown(null); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                      {getMonthLabel(mois)} <span className="text-gray-400 text-xs">({rows.length})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              label="PDF"
+              wrapperClassName="relative"
+              buttonClassName="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-2.5 sm:px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
+              menuWidth={224}
+              items={[
+                { label: 'Tous les mois', onClick: handleExportAllPDF, bold: true },
+                ...cotisationsParMois.map(([mois, rows]) => ({
+                  label: <>{getMonthLabel(mois)} <span className="text-gray-400 text-xs">({rows.length})</span></>,
+                  onClick: () => handleExportMonthPDF(mois, rows)
+                }))
+              ]}
+            />
+            <ExportMenu
+              label="Excel"
+              wrapperClassName="relative"
+              buttonClassName="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-2.5 sm:px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
+              menuWidth={224}
+              items={[
+                { label: 'Tous les mois', onClick: handleExportAllExcel, bold: true },
+                ...cotisationsParMois.map(([mois, rows]) => ({
+                  label: <>{getMonthLabel(mois)} <span className="text-gray-400 text-xs">({rows.length})</span></>,
+                  onClick: () => handleExportMonthExcel(mois, rows)
+                }))
+              ]}
+            />
             <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-700 text-white px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
               {showForm ? <X className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
               <span>{showForm ? 'Annuler' : 'Nouvelle'}</span>
