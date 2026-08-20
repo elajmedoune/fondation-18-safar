@@ -16,9 +16,9 @@ function renderMarkdown(text) {
   const flushList = () => {
     if (listItems.length > 0) {
       elements.push(
-        <ul key={`ul-${elements.length}`} className="list-disc list-inside space-y-0.5 my-2 text-sm">
+        <ul key={`ul-${elements.length}`} className="list-disc pl-4 space-y-1.5 my-2.5 text-sm">
           {listItems.map((item, i) => (
-            <li key={i} className="text-gray-800 dark:text-gray-200">{renderInline(item)}</li>
+            <li key={i} className="text-gray-800 dark:text-gray-200 leading-relaxed break-words">{renderInline(item)}</li>
           ))}
         </ul>
       );
@@ -67,12 +67,12 @@ function renderMarkdown(text) {
         const header = tableRows[0];
         const body = tableRows.slice(1);
         elements.push(
-          <div key={`tbl-${elements.length}`} className="overflow-x-auto my-2">
+          <div key={`tbl-${elements.length}`} className="overflow-x-auto my-2.5 -mx-1 px-1">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-100 dark:bg-gray-800">
                   {header.map((cell, ci) => (
-                    <th key={ci} className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700">{renderInline(cell)}</th>
+                    <th key={ci} className="px-2 sm:px-3 py-1.5 sm:py-2 text-left font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 whitespace-nowrap">{renderInline(cell)}</th>
                   ))}
                 </tr>
               </thead>
@@ -80,7 +80,7 @@ function renderMarkdown(text) {
                 {body.map((row, ri) => (
                   <tr key={ri} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     {row.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-2 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700">{renderInline(cell)}</td>
+                      <td key={ci} className="px-2 sm:px-3 py-1.5 sm:py-2 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 whitespace-nowrap">{renderInline(cell)}</td>
                     ))}
                   </tr>
                 ))}
@@ -105,7 +105,7 @@ function renderMarkdown(text) {
     } else if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
       elements.push(<p key={i} className="font-bold mt-3 mb-1 text-sm text-gray-900 dark:text-white">{renderInline(trimmed)}</p>);
     } else {
-      elements.push(<p key={i} className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed my-1">{renderInline(trimmed)}</p>);
+      elements.push(<p key={i} className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed my-1.5 break-words">{renderInline(trimmed)}</p>);
     }
   }
 
@@ -250,7 +250,7 @@ export default function AIAssistant() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)]">
+    <div className="flex flex-col h-[calc(100dvh-140px)]">
       <PageHeader
         title="Assistant IA"
         subtitle={campagneActive ? `Campagne ${campagneActive.nom || campagneActive.annee}` : 'Posez vos questions'}
@@ -289,15 +289,15 @@ export default function AIAssistant() {
           </div>
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 px-2 py-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 px-3 sm:px-2 py-4">
           {messages.map((m) => (
-            <div key={m.id} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div key={m.id} className={`flex gap-2 sm:gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {m.role === 'assistant' && (
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30 mt-1">
                   <Bot className="h-3.5 w-3.5 text-primary-600 dark:text-primary-400" />
                 </div>
               )}
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+              <div className={`max-w-[86%] sm:max-w-[75%] min-w-0 rounded-2xl px-3.5 sm:px-4 py-2.5 overflow-x-hidden ${
                 m.role === 'user'
                   ? 'bg-primary-700 text-white rounded-br-md'
                   : 'bg-white/70 dark:bg-gray-800/70 border border-gray-200/70 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 rounded-bl-md shadow-sm'
@@ -332,7 +332,7 @@ export default function AIAssistant() {
       )}
 
       {/* Input */}
-      <div className="shrink-0 border-t border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md px-3 py-3">
+      <div className="shrink-0 border-t border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <form
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="flex items-center gap-2"

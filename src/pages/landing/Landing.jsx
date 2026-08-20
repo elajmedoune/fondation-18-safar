@@ -1,26 +1,26 @@
 import { Link } from 'react-router-dom';
-import { Landmark, Users, HandHeart, Calendar, Shield, ArrowRight, Heart } from 'lucide-react';
+import { Users, HandHeart, Calendar, Shield, ArrowRight, Heart } from 'lucide-react';
 
 const FEATURES = [
   {
     icon: Users,
     title: 'Gestion des membres',
-    desc: 'Suivi complet des membres, leurs roles et participations.'
+    desc: 'Suivi complet des membres, leurs rôles et participations.'
   },
   {
     icon: HandHeart,
     title: 'Finances transparentes',
-    desc: 'Cotisations, dons et collectes suivis en temps reel.'
+    desc: 'Cotisations, dons et collectes suivis en temps réel.'
   },
   {
     icon: Calendar,
-    title: 'Reunions & comptes rendus',
-    desc: 'Planification des reunions et suivi des presences.'
+    title: 'Réunions & comptes rendus',
+    desc: 'Planification des réunions et suivi des présences.'
   },
   {
     icon: Shield,
-    title: 'Roles & permissions',
-    desc: 'Acces securise avec gestion des droits par role.'
+    title: 'Rôles & permissions',
+    desc: 'Accès sécurisé avec gestion des droits par rôle.'
   }
 ];
 
@@ -38,23 +38,23 @@ export default function Landing() {
         <div className="relative z-10 mx-auto max-w-4xl px-6 py-20 text-center">
           <div className="landing-fade mb-8 inline-flex items-center justify-center">
             <div className="relative">
-              <div className="pulse-ring absolute inset-0 rounded-3xl bg-white/20" />
-              <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-white/15 backdrop-blur-sm shadow-2xl shadow-black/20 border border-white/20">
-                <Landmark className="h-10 w-10 text-white" strokeWidth={1.5} />
+              <div className="pulse-ring absolute inset-0 rounded-3xl bg-amber-300/25" />
+              <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl bg-white p-2.5 shadow-2xl shadow-black/30 ring-1 ring-white/40">
+                <img src="/logo1.jpeg" alt="Fondation 18 Safar" className="h-full w-full object-contain rounded-2xl" />
               </div>
             </div>
           </div>
 
           <h1 className="landing-fade-delay-1 text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white">
             Fondation
-            <span className="block bg-gradient-to-r from-white via-primary-100 to-primary-200 bg-clip-text text-transparent">
+            <span className="block bg-gradient-to-r from-amber-200 via-white to-amber-200 bg-clip-text text-transparent">
               18 Safar
             </span>
           </h1>
 
           <p className="landing-fade-delay-2 mx-auto mt-6 max-w-xl text-lg text-primary-100/80 leading-relaxed">
-            La plateforme de gestion collaborative pour les membres de la fondation. 
-            Suivez vos cotisations, participez aux reunions et contribuez a notre mission.
+            La plateforme de gestion collaborative pour les membres de la fondation.
+            Suivez vos cotisations, participez aux réunions et contribuez à notre mission.
           </p>
 
           <div className="landing-fade-delay-3 mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -81,10 +81,10 @@ export default function Landing() {
         <div className="mx-auto max-w-5xl">
           <div className="landing-slide-up text-center mb-14">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Tout pour gerger notre fondation
+              Tout pour gérer notre fondation
             </h2>
             <p className="mt-3 text-gray-500 dark:text-gray-400 max-w-lg mx-auto">
-              Un outil simple et efficace pour coordonner les activities et financement.
+              Un outil simple et efficace pour coordonner nos activités et notre financement.
             </p>
           </div>
 
@@ -109,12 +109,12 @@ export default function Landing() {
       {/* Footer */}
       <footer className="bg-gray-50 dark:bg-gray-950 border-t border-gray-200/70 dark:border-gray-800 py-8 px-6">
         <div className="mx-auto max-w-5xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-gray-400 dark:text-gray-600">
-            <Landmark className="h-4 w-4" />
+          <div className="flex items-center gap-2.5 text-gray-400 dark:text-gray-600">
+            <img src="/logo.jpeg" alt="" className="h-6 w-6 rounded-md object-contain" />
             <span className="text-sm">&copy; {new Date().getFullYear()} Fondation 18 Safar</span>
           </div>
           <div className="flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-600">
-            Fait avec <Heart className="h-3.5 w-3.5 text-red-400 fill-red-400" /> pour la communaute
+            Fait avec <Heart className="h-3.5 w-3.5 text-red-400 fill-red-400" /> pour la communauté
           </div>
         </div>
       </footer>
