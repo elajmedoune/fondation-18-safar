@@ -7,6 +7,11 @@ import { AuthProvider } from './contexts/AuthContext.jsx';
 import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import { CampagneProvider } from './contexts/CampagneContext.jsx';
 import { WakeupProvider } from './components/ui/WakeupProvider.jsx';
+import '@fontsource/plus-jakarta-sans/400.css';
+import '@fontsource/plus-jakarta-sans/500.css';
+import '@fontsource/plus-jakarta-sans/600.css';
+import '@fontsource/plus-jakarta-sans/700.css';
+import '@fontsource/plus-jakarta-sans/800.css';
 import './index.css';
 
 const queryClient = new QueryClient({

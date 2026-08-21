@@ -1,64 +1,60 @@
 import { useRef, useState } from 'react';
-import { toPng } from 'html-to-image';
 import QRCode from 'qrcode.react';
 import { Camera, Loader2, ShieldCheck, Download } from 'lucide-react';
 import { membresService } from '../../services/membres.service.js';
 
-// Convertit une image distante (logo, photo Supabase) en data URL locale.
-// Nécessaire pour l'export : sur mobile, une image chargée depuis un autre
-// domaine peut faire échouer ou vider silencieusement la capture (CORS).
-// Une fois en data URL, l'image n'a plus besoin du réseau et n'a plus de
-// problème d'origine pour la capture.
-async function urlToDataUrl(url) {
-  if (!url) return null;
-  try {
-    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
+const CARD_WIDTH = 480;
+const CARD_HEIGHT = 303;
+const EXPORT_SCALE = 3;
+
+const GREEN_DARK = '#0a3327';
+const GREEN = '#0c4a37';
+const GOLD = '#c9a227';
+const GOLD_LIGHT = '#e9cf7a';
+const CREAM = '#fbfaf5';
+
+function loadImg(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
 }
 
-// Sauvegarde un PNG (fourni en data URL) sur l'appareil de l'utilisateur.
-// Sur mobile en PWA installée (surtout iOS Safari standalone), un <a download>
-// pointant vers une data/blob URL ne déclenche pas de téléchargement : le
-// navigateur essaie de "naviguer" vers cette URL, ce qui affiche une page
-// blanche à la place. Le Web Share API (menu de partage natif, avec
-// "Enregistrer l'image" / "Enregistrer dans Fichiers") est la méthode fiable
-// pour sauvegarder un fichier dans ce contexte. On revient au lien de
-// téléchargement classique si le partage de fichier n'est pas disponible
-// (desktop, anciens navigateurs).
-async function saveDataUrlAsFile(dataUrl, filename) {
-  const blob = await (await fetch(dataUrl)).blob();
+function coverDraw(ctx, img, x, y, w, h) {
+  const imgRatio = img.width / img.height;
+  const boxRatio = w / h;
+  let sw, sh, sx, sy;
+  if (imgRatio > boxRatio) { sh = img.height; sw = sh * boxRatio; sx = (img.width - sw) / 2; sy = 0; }
+  else { sw = img.width; sh = sw / boxRatio; sx = 0; sy = (img.height - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
 
-  if (navigator.canShare && navigator.share) {
-    const file = new File([blob], filename, { type: 'image/png' });
-    if (navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Carte de membre' });
-        return;
-      } catch (err) {
-        if (err?.name === 'AbortError') return; // l'utilisateur a annulé le partage
-        // sinon on continue vers le fallback ci-dessous
-      }
-    }
-  }
+function roundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
-  const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = blobUrl;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+async function fetchAsDataUrl(url) {
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onloadend = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsDataURL(blob);
+  });
 }
 
 export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhotoUpdated }) {
@@ -89,211 +85,465 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
     }
   };
 
-  // Exporte la carte en vrai fichier PNG téléchargeable (pas d'impression navigateur).
-  // Utilise un clone caché avec des dimensions fixes pour garantir un rendu identique
-  // quel que soit l'appareil ou la taille d'écran.
-  const EXPORT_WIDTH = 400;
-
   const handleExportPng = async () => {
-    if (!cardRef.current) return;
     setExporting(true);
     try {
-      const original = cardRef.current;
+      const W = CARD_WIDTH;
+      const H = CARD_HEIGHT;
+      const S = EXPORT_SCALE;
 
-      // Précharger logo + photo en data URL AVANT de cloner, pour que la
-      // capture n'ait plus besoin d'aller chercher ces images sur le réseau.
-      const [logoDataUrl, photoDataUrl] = await Promise.all([
-        urlToDataUrl('/logo.png'),
-        urlToDataUrl(membre.photo_url)
+      const [photoImg, logoImg] = await Promise.all([
+        membre.photo_url ? loadImg(membre.photo_url).catch(() => null) : null,
+        loadImg('/logo-transparent.png').catch(() => null)
       ]);
 
-      // Clone the card node off-screen with fixed width
-      const clone = original.cloneNode(true);
-      clone.style.position = 'fixed';
-      clone.style.left = '-9999px';
-      clone.style.top = '0';
-      clone.style.width = EXPORT_WIDTH + 'px';
-      clone.style.maxWidth = EXPORT_WIDTH + 'px';
-      clone.style.flexShrink = '0';
-      clone.style.margin = '0';
-      clone.style.padding = '0';
-      clone.style.border = 'none';
-      clone.style.boxShadow = 'none';
-      clone.removeAttribute('class');
-      clone.className = '';
+      let qrImg = null;
+      try {
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(membre.qr_code_value)}&size=${200}x${200}&format=png`;
+        qrImg = await loadImg(qrUrl);
+      } catch {}
 
-      // Apply same base styles as original
-      const origStyles = window.getComputedStyle(original);
-      clone.style.borderRadius = origStyles.borderRadius;
-      clone.style.overflow = 'hidden';
-      clone.style.backgroundColor = '#ffffff';
-      clone.style.colorScheme = 'light';
+      const c = document.createElement('canvas');
+      c.width = W * S;
+      c.height = H * S;
+      const ctx = c.getContext('2d');
+      ctx.scale(S, S);
 
-      // Remplace les src des images du clone par les versions en data URL
-      // (identifiées via data-export-role, pas par alt qui peut être vide/dupliqué)
-      if (logoDataUrl) {
-        const logoImg = clone.querySelector('img[data-export-role="logo"]');
-        if (logoImg) logoImg.src = logoDataUrl;
+      roundedRect(ctx, 0, 0, W, H, 16);
+      ctx.clip();
+
+      ctx.fillStyle = CREAM;
+      ctx.fillRect(0, 0, W, H);
+
+      const topGrad = ctx.createLinearGradient(0, 0, W, 40);
+      topGrad.addColorStop(0, GREEN);
+      topGrad.addColorStop(1, GREEN_DARK);
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, 0, W, 40);
+
+      ctx.fillStyle = GOLD;
+      ctx.fillRect(0, 40, W, 2);
+
+      ctx.font = '800 18px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tW = ctx.measureText('Fondation 18 Safar').width;
+      const tX = (W - tW) / 2;
+      ctx.fillStyle = GOLD_LIGHT;
+      ctx.textAlign = 'left';
+      ctx.fillText('Fondation ', tX, 20);
+      const f1W = ctx.measureText('Fondation ').width;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('18', tX + f1W, 20);
+      const f2W = ctx.measureText('18').width;
+      ctx.fillStyle = GOLD_LIGHT;
+      ctx.fillText(' Safar', tX + f1W + f2W, 20);
+
+      ctx.fillStyle = CREAM;
+      ctx.fillRect(0, 42, W, H - 42 - 38);
+
+      const contentTop = 42;
+      const contentH = H - 42 - 38;
+      const contentMid = contentTop + contentH / 2;
+
+      if (logoImg) {
+        ctx.globalAlpha = 0.07;
+        ctx.drawImage(logoImg, W / 2 - 83, 62, 166, 166);
+        ctx.globalAlpha = 1;
       }
-      if (photoDataUrl) {
-        const photoImg = clone.querySelector('img[data-export-role="photo"]');
-        if (photoImg) photoImg.src = photoDataUrl;
+
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = GREEN;
+      ctx.beginPath();
+      ctx.arc(W - 10, contentTop + 10, 50, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-10, H - 38 - 10, 40, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.05;
+      ctx.fillStyle = GOLD;
+      ctx.beginPath();
+      ctx.arc(W - 20, contentTop + 30, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(20, H - 38 - 25, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.04;
+      ctx.strokeStyle = GREEN;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(W - 5, H - 38 - 5, 65, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(5, contentTop + 5, 55, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      const qrSize = 100;
+      const qrPad = 7;
+      const badgeH = 34;
+      const badgeGap = 6;
+      const rightBlockH = qrSize + qrPad * 2 + badgeGap + badgeH;
+      const rightBlockY = contentMid - rightBlockH / 2;
+      const qrX = W - 16 - qrSize - qrPad;
+      const qrY = rightBlockY + qrPad;
+
+      ctx.fillStyle = '#ffffff';
+      roundedRect(ctx, qrX - qrPad, qrY - qrPad, qrSize + qrPad * 2, qrSize + qrPad * 2, 8);
+      ctx.fill();
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1;
+      roundedRect(ctx, qrX - qrPad, qrY - qrPad, qrSize + qrPad * 2, qrSize + qrPad * 2, 8);
+      ctx.stroke();
+      if (qrImg) {
+        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
       }
 
-      document.body.appendChild(clone);
+      const badgeW = 180;
+      const badgeX = qrX - qrPad + (qrSize + qrPad * 2 - badgeW) / 2;
+      const badgeY = qrY + qrSize + qrPad + badgeGap;
+      ctx.fillStyle = GREEN;
+      roundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 8);
+      ctx.fill();
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1;
+      roundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 8);
+      ctx.stroke();
 
-      // Wait for layout + images
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await new Promise((r) => setTimeout(r, 100));
+      if (logoImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(badgeX + 15, badgeY + badgeH / 2, 10, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.drawImage(logoImg, badgeX + 5, badgeY + badgeH / 2 - 10, 20, 20);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(badgeX + 15, badgeY + badgeH / 2, 10, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
+      }
 
-      // Make sure all images inside the clone are loaded
-      const imgs = clone.querySelectorAll('img');
-      await Promise.all(
-        Array.from(imgs).map(
-          (img) =>
-            new Promise((resolve) => {
-              if (img.complete) return resolve();
-              img.onload = resolve;
-              img.onerror = resolve;
-              setTimeout(resolve, 2000);
-            })
-        )
-      );
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 14px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Carte de membre', badgeX + 32, badgeY + badgeH / 2);
 
-      const dataUrl = await toPng(clone, {
-        pixelRatio: 3,
-        cacheBust: true,
-        width: EXPORT_WIDTH,
-        backgroundColor: '#ffffff',
-        filter: (node) => !node.dataset || node.dataset.noExport !== 'true'
+      const photoW = 88;
+      const photoH = 108;
+      const numH = 16;
+      const leftBlockH = photoH + numH;
+      const leftBlockY = contentMid - leftBlockH / 2;
+      const photoX = 18;
+      const photoY = leftBlockY;
+
+      if (photoImg) {
+        ctx.save();
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
+        ctx.clip();
+        coverDraw(ctx, photoImg, photoX, photoY, photoW, photoH);
+        ctx.restore();
+        ctx.strokeStyle = GOLD;
+        ctx.lineWidth = 2;
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#f0ece0';
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
+        ctx.fill();
+        ctx.strokeStyle = GOLD;
+        ctx.lineWidth = 2;
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
+        ctx.stroke();
+        ctx.fillStyle = GREEN;
+        ctx.font = 'bold 20px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${membre.prenom?.[0] || ''}${membre.nom?.[0] || ''}`, photoX + photoW / 2, photoY + photoH / 2);
+      }
+
+      ctx.fillStyle = GREEN;
+      ctx.font = '700 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`N° ${membre.numero_membre}`, photoX + photoW / 2, photoY + photoH + 6);
+
+      const fieldX = photoX + photoW + 18;
+      const fieldStartY = contentMid - (3 * 32) / 2;
+      const fields = [
+        ['Nom', membre.nom],
+        ['Prénom', membre.prenom],
+        ['Fonction', fonction || groupeNom || '—'],
+        ['Téléphone', membre.telephone || '—']
+      ];
+
+      fields.forEach(([label, value], i) => {
+        const fy = fieldStartY + i * 32;
+        ctx.fillStyle = GREEN;
+        ctx.font = '700 12px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(`${label} :`, fieldX, fy);
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = '600 15px system-ui, sans-serif';
+        ctx.fillText(value || '—', fieldX, fy + 15);
       });
 
-      await saveDataUrlAsFile(dataUrl, `carte-${membre.numero_membre || membre.id}.png`);
+      const footerY = H - 38;
+      const footGrad = ctx.createLinearGradient(0, footerY, W, H);
+      footGrad.addColorStop(0, GREEN);
+      footGrad.addColorStop(1, GREEN_DARK);
+      ctx.fillStyle = footGrad;
+      ctx.fillRect(0, footerY, W, 38);
+
+      ctx.fillStyle = GOLD;
+      ctx.beginPath();
+      ctx.moveTo(0, footerY);
+      ctx.bezierCurveTo(75, footerY - 9, 150, footerY + 2, 240, footerY - 5);
+      ctx.bezierCurveTo(330, footerY - 12, 400, footerY, 480, footerY - 7);
+      ctx.lineTo(W, footerY + 2);
+      ctx.lineTo(0, footerY + 2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = GOLD_LIGHT;
+      ctx.font = '600 9px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Année', 16, footerY + 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 15px system-ui, sans-serif';
+      ctx.fillText(String(annee), 16, footerY + 18);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(W - 141, H - 14);
+      ctx.lineTo(W - 16, H - 14);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.font = '400 9px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('Signature du titulaire', W - 16, H - 10);
+
+      const link = document.createElement('a');
+      link.download = `carte-${membre.numero_membre || membre.id}.png`;
+      link.href = c.toDataURL('image/png');
+      link.click();
     } catch (err) {
       console.error(err);
       alert("Erreur lors de l'export de la carte.");
     } finally {
-      // Cleanup clone if still in DOM
-      document.querySelectorAll('body > [style*="-9999px"]').forEach((el) => el.remove());
       setExporting(false);
     }
   };
 
   return (
-    <div className="w-full max-w-sm space-y-2">
-      {/*
-        Tout ce qui est DANS cardRef a des couleurs FIXES (pas de dark:),
-        volontairement, pour que la carte ait toujours le même rendu,
-        que le site soit en mode clair ou sombre, à l'écran et à l'export.
-      */}
-      <div
-        ref={cardRef}
-        className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg shadow-gray-200/60"
-        style={{ colorScheme: 'light' }}
-      >
-        {/* Bandeau supérieur */}
-        <div className="relative bg-gradient-to-br from-primary-600 to-primary-800 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 ring-1 ring-white/40 overflow-hidden">
-              {!logoFailed ? (
-                <img
-                  src="/logo.png"
-                  alt="Logo"
-                  data-export-role="logo"
-                  crossOrigin="anonymous"
-                  onError={() => setLogoFailed(true)}
-                  className="h-full w-full object-contain p-1"
-                />
-              ) : (
-                <ShieldCheck className="h-5 w-5 text-primary-700" strokeWidth={1.75} />
-              )}
-            </div>
-            <div className="leading-tight">
-              <p className="font-bold text-xs uppercase tracking-widest text-white">Fondation 18 Safar</p>
-              <p className="text-[10px] text-white/80 mt-0.5">Carte de membre{annee ? ` — ${annee}` : ''}</p>
-            </div>
-          </div>
-          <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
-          <div className="pointer-events-none absolute -right-2 -bottom-8 h-16 w-16 rounded-full bg-white/5" />
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              {membre.photo_url ? (
-                <img
-                  src={membre.photo_url}
-                  alt=""
-                  data-export-role="photo"
-                  crossOrigin="anonymous"
-                  className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-sm"
-                />
-              ) : (
-                <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-gray-400 text-lg font-bold border-2 border-white shadow-sm">
-                  {membre.prenom?.[0]}{membre.nom?.[0]}
-                </div>
-              )}
-
-              <button
-                type="button"
-                data-no-export="true"
-                onClick={handlePickPhoto}
-                disabled={uploading}
-                title="Importer une photo"
-                className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary-700 text-white shadow hover:bg-primary-800 disabled:opacity-60"
+    <div className="w-full flex flex-col items-center gap-2">
+      <div className="w-full overflow-x-auto flex justify-center">
+        <div style={{ minWidth: CARD_WIDTH * 0.7 }}>
+          <div style={{ width: CARD_WIDTH * 0.7, height: CARD_HEIGHT * 0.7, position: 'relative' }}>
+            <div
+              ref={cardRef}
+              className="absolute top-0 left-0 origin-top-left shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-gray-300/60 flex flex-col"
+              style={{
+                width: CARD_WIDTH,
+                height: CARD_HEIGHT,
+                transform: 'scale(0.7)',
+                colorScheme: 'light',
+                background: CREAM,
+                border: `2px solid ${GOLD}`
+              }}
+            >
+            <div
+              className="relative flex shrink-0 flex-col items-center justify-center"
+              style={{
+                height: 40,
+                background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`,
+                borderBottom: `2px solid ${GOLD}`
+              }}
+            >
+              <p
+                className="font-extrabold uppercase leading-none"
+                style={{ fontSize: 18, letterSpacing: '0.02em', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}
               >
-                {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                <span style={{ color: GOLD_LIGHT }}>Fondation </span>
+                <span style={{ color: '#ffffff' }}>18</span>
+                <span style={{ color: GOLD_LIGHT }}> Safar</span>
+              </p>
             </div>
 
-            <div className="min-w-0">
-              <p className="font-semibold text-sm truncate text-gray-900">{membre.prenom} {membre.nom}</p>
-              <p className="text-xs text-gray-400 mt-0.5">N° {membre.numero_membre}</p>
-            </div>
-          </div>
+            <div className="relative flex-1 min-h-0 overflow-hidden">
+              <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.07]" style={{ height: 166, width: 166 }}>
+                {!logoFailed && (
+                  <img
+                    src="/logo-transparent.png"
+                    alt=""
+                    crossOrigin="anonymous"
+                    className="h-full w-full object-contain"
+                  />
+                )}
+              </div>
 
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs border-t border-gray-100 pt-3">
-            <div>
-              <dt className="text-[10px] uppercase tracking-wide text-gray-400">Groupe</dt>
-              <dd className="font-medium text-gray-800 mt-0.5">{groupeNom || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-[10px] uppercase tracking-wide text-gray-400">Année</dt>
-              <dd className="font-medium text-gray-800 mt-0.5">{annee || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-[10px] uppercase tracking-wide text-gray-400">Téléphone</dt>
-              <dd className="font-medium text-gray-800 mt-0.5">{membre.telephone || '—'}</dd>
-            </div>
-            <div className="col-span-2 min-h-[1.1rem]">
-              {fonction ? (
-                <>
-                  <dt className="text-[10px] uppercase tracking-wide text-gray-400">Fonction</dt>
-                  <dd className="font-semibold text-primary-700 mt-0.5">{fonction}</dd>
-                </>
-              ) : null}
-            </div>
-          </dl>
+              <div className="pointer-events-none absolute right-[-10px] top-[-10px] h-[100px] w-[100px] rounded-full opacity-[0.06]" style={{ background: GREEN }} />
+              <div className="pointer-events-none absolute bottom-[-10px] left-[-10px] h-[80px] w-[80px] rounded-full opacity-[0.06]" style={{ background: GREEN }} />
+              <div className="pointer-events-none absolute right-[-20px] top-[20px] h-[60px] w-[60px] rounded-full opacity-[0.05]" style={{ background: GOLD }} />
+              <div className="pointer-events-none absolute bottom-[-15px] left-[15px] h-[50px] w-[50px] rounded-full opacity-[0.05]" style={{ background: GOLD }} />
+              <div className="pointer-events-none absolute right-[-5px] bottom-[-5px] h-[130px] w-[130px] rounded-full border-[1.5px] opacity-[0.04]" style={{ borderColor: GREEN }} />
+              <div className="pointer-events-none absolute left-[5px] top-[5px] h-[110px] w-[110px] rounded-full border-[1.5px] opacity-[0.04]" style={{ borderColor: GREEN }} />
 
-          <div className="flex items-center justify-between pt-2 border-t border-dashed border-gray-200">
-            <div className="flex items-center gap-1.5 text-gray-400">
-              <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span className="text-[10px] uppercase tracking-wide">Carte officielle</span>
+              <div className="relative flex items-start gap-3.5 px-4 pt-3">
+                <div className="flex shrink-0 flex-col items-center">
+                  <div className="relative">
+                    {membre.photo_url ? (
+                      <img
+                        src={membre.photo_url}
+                        alt=""
+                        crossOrigin="anonymous"
+                        className="rounded-lg object-cover shadow-sm"
+                        style={{ height: 92, width: 74, border: `2px solid ${GOLD}` }}
+                      />
+                    ) : (
+                      <div
+                        className="rounded-lg flex items-center justify-center text-lg font-bold shadow-sm"
+                        style={{ height: 92, width: 74, background: '#f0ece0', color: GREEN, border: `2px solid ${GOLD}` }}
+                      >
+                        {membre.prenom?.[0]}
+                        {membre.nom?.[0]}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      data-no-export="true"
+                      onClick={handlePickPhoto}
+                      disabled={uploading}
+                      title="Importer une photo"
+                      className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full text-white shadow hover:opacity-90 disabled:opacity-60"
+                      style={{ background: GOLD }}
+                    >
+                      {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                  </div>
+                  <p
+                    className="mt-1.5 text-center font-bold tracking-wide leading-none"
+                    style={{ fontSize: 10, color: GREEN }}
+                  >
+                    N° {membre.numero_membre}
+                  </p>
+                </div>
+
+                <dl className="min-w-0 flex-1 space-y-2.5 text-[12.5px] leading-snug pt-0.5">
+                  {[
+                    ['Nom', membre.nom],
+                    ['Prénom', membre.prenom],
+                    ['Fonction', fonction || groupeNom || '—'],
+                    ['Téléphone', membre.telephone || '—']
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-baseline gap-1.5">
+                      <dt
+                        className="shrink-0 font-bold uppercase tracking-wide"
+                        style={{ color: GREEN, fontSize: 11.5 }}
+                      >
+                        {label} :
+                      </dt>
+                      <dd
+                        className="min-w-0 flex-1 truncate font-semibold"
+                        style={{
+                          color: '#1a1a1a',
+                          borderBottom: `1px dotted ${GOLD}`,
+                          paddingBottom: 1
+                        }}
+                      >
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              <div className="relative flex items-end justify-between px-4 mt-2.5">
+                <div
+                  className="inline-flex items-center gap-2 rounded-md pl-1 pr-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wide shadow-sm"
+                  style={{ background: GREEN, border: `1px solid ${GOLD}`, color: '#ffffff' }}
+                >
+                  <span
+                    className="flex items-center justify-center rounded-full bg-white overflow-hidden shrink-0"
+                    style={{ height: 19, width: 19, border: `1px solid ${GOLD}` }}
+                  >
+                    {!logoFailed ? (
+                      <img
+                        src="/logo-transparent.png"
+                        alt=""
+                        crossOrigin="anonymous"
+                        onError={() => setLogoFailed(true)}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <ShieldCheck className="h-3 w-3" style={{ color: GREEN }} strokeWidth={2} />
+                    )}
+                  </span>
+                  Carte de membre
+                </div>
+                <div className="rounded-md p-1 shadow-sm" style={{ background: '#ffffff', border: `1px solid ${GOLD}` }}>
+                  <QRCode value={membre.qr_code_value} size={60} />
+                </div>
+              </div>
             </div>
-            <div className="rounded-lg border border-gray-100 p-1 bg-white shadow-sm">
-              <QRCode value={membre.qr_code_value} size={80} />
+
+            <div
+              className="relative shrink-0 flex items-center justify-between px-4"
+              style={{
+                height: 38,
+                background: `linear-gradient(200deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`
+              }}
+            >
+              <svg
+                className="absolute left-0 right-0 -top-2 w-full"
+                height="11"
+                viewBox="0 0 480 11"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0,9 C75,0 150,11 240,4 C330,-3 400,9 480,2 L480,11 L0,11 Z"
+                  fill={GOLD}
+                  opacity="0.9"
+                />
+              </svg>
+
+              <div>
+                <p className="text-[9px] uppercase tracking-widest leading-none" style={{ color: GOLD_LIGHT }}>
+                  Année
+                </p>
+                <p className="text-[15px] font-extrabold leading-tight" style={{ color: '#ffffff' }}>
+                  {annee}
+                </p>
+              </div>
+              <div className="text-right">
+                <div style={{ borderBottom: `1px solid rgba(255,255,255,0.4)`, width: 125, marginBottom: 2 }} />
+                <p className="text-[9px] leading-none" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                  Signature du titulaire
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      </div>
 
-      {/* Bouton export — hors de la zone capturée, jamais dans l'image exportée */}
       <button
         type="button"
         onClick={handleExportPng}
         disabled={exporting}
-        className="w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-60 transition-colors"
+        style={{ width: CARD_WIDTH * 0.7, maxWidth: '100%' }}
+        className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-60 transition-colors"
       >
         {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         {exporting ? 'Export en cours...' : 'Exporter cette carte (PNG)'}

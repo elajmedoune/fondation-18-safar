@@ -31,16 +31,17 @@ export default function CartesMembres() {
       {fiches.length === 0 ? (
         <p className="text-sm text-gray-500">Aucun membre pour cette campagne.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="flex flex-wrap gap-6 justify-center items-start">
           {fiches.map((f, i) => (
-            <CarteMembre
-              key={f.id ?? `${f.membre?.id}-${i}`}
-              membre={f.membre}
-              groupeNom={f.groupe?.nom}
-              fonction={f.fonctionAffichee}
-              annee={campagneActive.annee}
-              onPhotoUpdated={handlePhotoUpdated}
-            />
+            <div key={f.id ?? `${f.membre?.id}-${i}`} className="w-full sm:w-[calc(50%-12px)] flex justify-center">
+              <CarteMembre
+                membre={f.membre}
+                groupeNom={f.groupe?.nom}
+                fonction={f.fonctionAffichee}
+                annee={campagneActive.annee}
+                onPhotoUpdated={handlePhotoUpdated}
+              />
+            </div>
           ))}
         </div>
       )}

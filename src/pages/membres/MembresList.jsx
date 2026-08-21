@@ -126,7 +126,7 @@ export default function MembresList() {
       const objectif = getObjectif(m?.sexe, campagneActive);
       const pct = objectif > 0 ? Math.min(100, Math.round((cotData.total / objectif) * 100)) : 0;
       const isBureau = !!f._roleBureau;
-      const isResp = f.fonctionAffichee === 'Responsable de groupe';
+      const isResp = f.fonctionAffichee?.startsWith('Responsable (');
       const hasPaidThisMonth = filterMois ? cotData.months.includes(filterMois) : true;
       const objectifAtteint = cotData.total >= objectif && objectif > 0;
 
