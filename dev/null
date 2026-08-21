@@ -1,502 +1,278 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_BASE = "https://api.groq.com/openai/v1/chat/completions";
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
-};
-function fmtName(m) {
-  if (!m) return "[Membre inconnu]";
-  const p = m.prenom || "";
-  const n = m.nom || "";
-  const full = `${p} ${n}`.trim();
-  return full || "[Membre inconnu]";
-}
-function fmtPct(part, total) {
-  if (total <= 0) return "0%";
-  return Math.round(part / total * 100) + "%";
-}
-async function getRosterCampagne(supabaseAdmin, campagneId) {
-  const [{ data: fiches }, { data: roles }] = await Promise.all([
-    supabaseAdmin.from("campagne_membres").select("*, membre:membres(nom,prenom,sexe,telephone,numero_membre,user_id), groupe:groupes(nom)").eq("campagne_id", campagneId).eq("statut", "actif"),
-    supabaseAdmin.from("user_roles").select("user_id, role, campagne_id").in("role", ["president", "tresorier", "secretaire", "administrateur"])
-  ]);
-  const allFiches = fiches || [];
-  const globalAdminUserIds = new Set(
-    (roles || []).filter((r) => r.role === "administrateur" && r.campagne_id === null).map((r) => r.user_id)
-  );
-  const ROLE_PRIORITY = ["administrateur", "president", "tresorier", "secretaire"];
-  const roleByUserId = /* @__PURE__ */ new Map();
-  (roles || []).filter((r) => !globalAdminUserIds.has(r.user_id) && (r.campagne_id === null || r.campagne_id === campagneId)).forEach((r) => {
-    const current = roleByUserId.get(r.user_id);
-    if (!current || ROLE_PRIORITY.indexOf(r.role) < ROLE_PRIORITY.indexOf(current)) {
-      roleByUserId.set(r.user_id, r.role);
-    }
-  });
-  const userIdsFromFiches = new Set(
-    allFiches.map((f) => f.membre?.user_id).filter(Boolean)
-  );
-  const missingUserIds = [...roleByUserId.keys()].filter((uid) => !userIdsFromFiches.has(uid));
-  let extraFiches = [];
-  if (missingUserIds.length > 0) {
-    const { data: extraMembres } = await supabaseAdmin.from("membres").select("id,nom,prenom,sexe,telephone,numero_membre,user_id").in("user_id", missingUserIds);
-    extraFiches = (extraMembres || []).map((m) => ({
-      id: null,
-      campagne_id: campagneId,
-      membre_id: m.id,
-      groupe_id: null,
-      fonction: null,
-      statut: "actif",
-      membre: m,
-      groupe: null
-    }));
-  }
-  return [...allFiches, ...extraFiches].filter((f) => !globalAdminUserIds.has(f.membre?.user_id));
-}
-async function getParticipantsParReunion(supabaseAdmin, reunionIds) {
-  const map = {};
-  if (!reunionIds || reunionIds.length === 0) return map;
-  const { data } = await supabaseAdmin.from("reunion_participants").select("reunion_id, statut_presence, membre:membres(nom,prenom)").in("reunion_id", reunionIds);
-  (data || []).forEach((p) => {
-    if (!map[p.reunion_id]) map[p.reunion_id] = { presents: [], absents: [] };
-    const name = fmtName(p.membre);
-    if (!name || name === "[Membre inconnu]") return;
-    if (p.statut_presence === "present" || p.statut_presence === "retard") map[p.reunion_id].presents.push(name);
-    else if (p.statut_presence === "excuse") map[p.reunion_id].absents.push(`${name} (excus\xE9)`);
-    else map[p.reunion_id].absents.push(name);
-  });
-  return map;
-}
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+import { useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, FileDown, FileSpreadsheet, UserPlus, X, Search } from "lucide-react";
+import { useAuth } from "../../hooks/useAuth.js";
+import { useCampagneContext } from "../../contexts/CampagneContext.jsx";
+import { groupesService } from "../../services/groupes.service.js";
+import { membresService } from "../../services/membres.service.js";
+const selectCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
+const inputCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
+async function loadLogoBase64() {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
+    const res = await fetch("/logo.jpeg");
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
     });
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-    const { message, campagneId } = await req.json();
-    if (!message) {
-      return new Response(JSON.stringify({ error: "Missing message" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-    const { data: roles } = await supabaseAdmin.from("user_roles").select("role, campagne_id").eq("user_id", user.id);
-    const isAdmin = roles?.some((r) => r.role === "administrateur");
-    const isPresident = roles?.some((r) => r.role === "president");
-    const isTresorier = roles?.some((r) => r.role === "tresorier");
-    const isSecretaire = roles?.some((r) => r.role === "secretaire");
-    const { data: membre } = await supabaseAdmin.from("membres").select("prenom, nom").eq("user_id", user.id).maybeSingle();
-    const userName = membre ? `${membre.prenom} ${membre.nom}` : user.email;
-    const roleLabel = isAdmin ? "Administrateur" : isPresident ? "Pr\xE9sident" : isTresorier ? "Tr\xE9sorier" : isSecretaire ? "Secr\xE9taire" : "Membre";
-    let contextData = "";
-    if (campagneId) {
-      if (isAdmin) {
-        const [cotisationsAll, depensesAll, donsAll, quetesAll, reunionsAll, campagne, objectifs, groupes] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom,numero_membre)").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId),
-          supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
-          supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
-          supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("groupes").select("*").eq("actif", true)
-        ]);
-        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
-        const cotisations = cotisationsAll.data || [];
-        const depenses = depensesAll.data || [];
-        const dons = donsAll.data || [];
-        const quetes = quetesAll.data || [];
-        const reunions = reunionsAll.data || [];
-        const tc = cotisations.reduce((s, c) => s + Number(c.montant), 0);
-        const td = depenses.reduce((s, d) => s + Number(d.montant), 0);
-        const tdon = dons.reduce((s, d) => s + Number(d.montant), 0);
-        const tq = quetes.reduce((s, q) => s + Number(q.montant), 0);
-        const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne.data?.objectif_global || 0);
-        const depensesByCat = {};
-        depenses.forEach((d) => {
-          depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant);
-        });
-        const cotisationsByMois = {};
-        cotisations.forEach((c) => {
-          const m = c.mois_cotisation || "Non pr\xE9cis\xE9";
-          if (!cotisationsByMois[m]) cotisationsByMois[m] = { total: 0, count: 0 };
-          cotisationsByMois[m].total += Number(c.montant);
-          cotisationsByMois[m].count++;
-        });
-        const membresAyantCotise = new Set(cotisations.map((c) => c.membre_id));
-        const rosterUserIds = membres.map((m) => m.membre?.user_id).filter(Boolean);
-        const { data: membresRoles } = rosterUserIds.length > 0 ? await supabaseAdmin.from("user_roles").select("user_id, role").in("user_id", rosterUserIds) : { data: [] };
-        const rolesByUser = {};
-        (membresRoles || []).forEach((r) => {
-          if (!rolesByUser[r.user_id]) rolesByUser[r.user_id] = [];
-          rolesByUser[r.user_id].push(r.role);
-        });
-        const membresNonCotisants = membres.filter((m) => !membresAyantCotise.has(m.membre_id)).map((m) => fmtName(m.membre));
-        const membresByGroupe = {};
-        membres.forEach((m) => {
-          const g = m.groupe?.nom || "Sans groupe";
-          if (!membresByGroupe[g]) membresByGroupe[g] = [];
-          const name = fmtName(m.membre);
-          const userRoles = rolesByUser[m.membre?.user_id] || [];
-          const isBureau = userRoles.some((r) => ["president", "tresorier", "secretaire", "responsable"].includes(r));
-          const roleTag = isBureau ? ` [Bureau: ${userRoles.join(", ")}]` : "";
-          membresByGroupe[g].push(`${name}${roleTag}`);
-        });
-        const allNames = /* @__PURE__ */ new Set();
-        membres.forEach((m) => {
-          if (m.membre?.prenom || m.membre?.nom) allNames.add(fmtName(m.membre));
-        });
-        cotisations.forEach((c) => {
-          if (c.membre?.prenom || c.membre?.nom) allNames.add(fmtName(c.membre));
-        });
-        const participantsParReunion = await getParticipantsParReunion(supabaseAdmin, reunions.map((r) => r.id));
-        const reunionsText = reunions.map((r) => {
-          const p = participantsParReunion[r.id];
-          const pres = p && p.presents.length > 0 ? ` \u2014 Pr\xE9sents (${p.presents.length}): ${p.presents.slice(0, 15).join(", ")}` : "";
-          const abs = p && p.absents.length > 0 ? ` \u2014 Absents: ${p.absents.slice(0, 10).join(", ")}` : "";
-          const odj = r.ordre_du_jour ? ` \u2014 ODJ: ${String(r.ordre_du_jour).slice(0, 150)}` : "";
-          return `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` \xE0 ${r.lieu}` : ""}${r.heure ? ` \xE0 ${r.heure}` : ""} ${r.compte_rendu ? "\u2705 CR r\xE9dig\xE9" : "\u274C CR manquant"}${odj}${pres}${abs}`;
-        }).join("\n") || "Aucune";
-        contextData = `[ADMIN - ACC\xC8S COMPLET] Fondation 18 Safar
-Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""}) | Statut: ${campagne.data?.statut || ""}
-Objectif: ${objectif}FCFA | Cotisation H: ${campagne.data?.cotisation_homme || 0}FCFA | F: ${campagne.data?.cotisation_femme || 0}FCFA
-
-CHIFFRES:
-- Cotisations: ${tc}FCFA (${cotisations.length} ops)
-- D\xE9penses: ${td}FCFA (${depenses.length} ops)
-- Dons: ${tdon}FCFA (${dons.length} ops)
-- Qu\xEAtes: ${tq}FCFA (${quetes.length} ops)
-- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres de la fondation: ${membres.length}
-- NOTE: Ce total est la liste officielle des membres (bureau inclus). Les administrateurs sont des comptes techniques et ne font PAS partie des membres.
-
-D\xC9PENSES PAR CAT\xC9GORIE:
-${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
-
-COTISATIONS PAR MOIS:
-${Object.entries(cotisationsByMois).map(([mois, v]) => `- ${mois}: ${v.total}FCFA (${v.count} ops)`).join("\n") || "Aucune"}
-
-MEMBRES PAR GROUPE (les membres du bureau sont indiqu\xE9s entre crochets - ils font partie des membres):
-${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}): ${ms.join(", ")}`).join("\n") || "Aucun"}
-
-MEMBRES AYANT COTIS\xC9 (${membresAyantCotise.size}):
-${cotisations.map((c) => `- ${fmtName(c.membre)}: ${c.montant}FCFA (${c.mois_cotisation || ""})`).join("\n") || "Aucun"}
-
-MEMBRES SANS COTISATION (${membresNonCotisants.length}):
-${membresNonCotisants.length > 0 ? membresNonCotisants.map((n) => `- ${n}`).join("\n") : "Aucun"}
-
-QU\xCATES (${quetes.length}):
-${quetes.slice(0, 10).map((q) => `- ${q.lieu}: ${q.montant}FCFA${q.collecteur?.membre ? ` (${fmtName(q.collecteur.membre)})` : ""}`).join("\n") || "Aucune"}
-
-R\xC9UNIONS (${reunions.length}, ${reunions.filter((r) => r.compte_rendu).length} avec CR):
-${reunionsText}
-
-DERNI\xC8RES OP\xC9RATIONS:
-${cotisations.slice(0, 5).map((c) => `Cotisation: ${fmtName(c.membre)} \u2014 ${c.montant}FCFA (${c.mois_cotisation || ""})`).join("\n")}
-${depenses.slice(0, 5).map((d) => `D\xE9pense: ${d.categorie} \u2014 ${d.montant}FCFA ${d.description ? `(${d.description})` : ""}`).join("\n")}
-
----
-REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map((n) => `- ${n}`).join("\n") || "Aucun"}`;
-      } else if (isPresident) {
-        const [cotisations, depenses, dons, quetes, reunions, campagne, objectifs] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("reunions").select("id, compte_rendu").eq("campagne_id", campagneId),
-          supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
-          supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId)
-        ]);
-        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
-        const tc = (cotisations.data || []).reduce((s, c) => s + Number(c.montant), 0);
-        const td = (depenses.data || []).reduce((s, d) => s + Number(d.montant), 0);
-        const tdon = (dons.data || []).reduce((s, d) => s + Number(d.montant), 0);
-        const tq = (quetes.data || []).reduce((s, q) => s + Number(q.montant), 0);
-        const objectif = Number(campagne.data?.objectif_global || 0);
-        const objectifsText = (objectifs.data || []).map((o) => `${o.activite_nom || "Global"}: ${o.montant_cible}FCFA`).join(", ");
-        const reunionsAvecCR = (reunions.data || []).filter((r) => r.compte_rendu).length;
-        contextData = `[PR\xC9SIDENT - VUE D'ENSEMBLE] Fondation 18 Safar
-Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""}) | Objectif: ${objectif}FCFA
-
-CHIFFRES:
-- Cotisations: ${tc}FCFA (${(cotisations.data || []).length} ops)
-- D\xE9penses: ${td}FCFA (${(depenses.data || []).length} ops)
-- Dons: ${tdon}FCFA (${(dons.data || []).length} ops)
-- Qu\xEAtes: ${tq}FCFA (${(quetes.data || []).length} ops)
-- Solde: ${tc + tdon + tq - td}FCFA
-- Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres de la fondation: ${membres.length}
-- R\xE9unions: ${(reunions.data || []).length} (${reunionsAvecCR} avec CR)
-
-OBJECTIFS: ${objectifsText || "Aucun"}`;
-      } else if (isTresorier) {
-        const [cotisationsAll, depensesAll, donsAll, quetesAll, campagne] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom)").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId),
-          supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single()
-        ]);
-        const cotisations = cotisationsAll.data || [];
-        const depenses = depensesAll.data || [];
-        const dons = donsAll.data || [];
-        const quetes = quetesAll.data || [];
-        const tc = cotisations.reduce((s, c) => s + Number(c.montant), 0);
-        const td = depenses.reduce((s, d) => s + Number(d.montant), 0);
-        const tdon = dons.reduce((s, d) => s + Number(d.montant), 0);
-        const tq = quetes.reduce((s, q) => s + Number(q.montant), 0);
-        const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne.data?.objectif_global || 0);
-        const depensesByCat = {};
-        depenses.forEach((d) => {
-          depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant);
-        });
-        const cotisationsByMois = {};
-        cotisations.forEach((c) => {
-          const m = c.mois_cotisation || "Non pr\xE9cis\xE9";
-          if (!cotisationsByMois[m]) cotisationsByMois[m] = { total: 0, count: 0 };
-          cotisationsByMois[m].total += Number(c.montant);
-          cotisationsByMois[m].count++;
-        });
-        const allNames = /* @__PURE__ */ new Set();
-        cotisations.forEach((c) => {
-          if (c.membre?.prenom || c.membre?.nom) allNames.add(fmtName(c.membre));
-        });
-        contextData = `[TR\xC9SORIER - FINANCES] Campagne: ${campagne.data?.nom || ""} | Objectif: ${objectif}FCFA
-
-CHIFFRES:
-- Cotisations: ${tc}FCFA (${cotisations.length} ops)
-- D\xE9penses: ${td}FCFA (${depenses.length} ops)
-- Dons: ${tdon}FCFA (${dons.length} ops)
-- Qu\xEAtes: ${tq}FCFA (${quetes.length} ops)
-- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-
-D\xC9PENSES PAR CAT\xC9GORIE:
-${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
-
-COTISATIONS PAR MOIS:
-${Object.entries(cotisationsByMois).map(([mois, v]) => `- ${mois}: ${v.total}FCFA (${v.count} ops)`).join("\n") || "Aucune"}
-
-DERNI\xC8RES COTISATIONS:
-${cotisations.slice(0, 10).map((c) => `- ${fmtName(c.membre)}: ${c.montant}FCFA (${c.mois_cotisation || ""})`).join("\n")}
-
-DERNI\xC8RES D\xC9PENSES:
-${depenses.slice(0, 10).map((d) => `- ${d.categorie}: ${d.montant}FCFA ${d.description ? `(${d.description})` : ""}`).join("\n")}
-
-DONS:
-${dons.map((d) => `- ${d.type}: ${d.montant}FCFA ${d.donateur_nom ? `(${d.donateur_nom})` : "(anonyme)"}`).join("\n") || "Aucun"}
-
-QU\xCATES:
-${quetes.map((q) => `- ${q.lieu}: ${q.montant}FCFA${q.collecteur?.membre ? ` (${fmtName(q.collecteur.membre)})` : ""}`).join("\n") || "Aucune"}
-
----
-REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map((n) => `- ${n}`).join("\n") || "Aucun"}`;
-      } else if (isSecretaire) {
-        const [reunions, campagne] = await Promise.all([
-          supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
-          supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single()
-        ]);
-        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
-        const membresByGroupe = {};
-        membres.forEach((m) => {
-          const g = m.groupe?.nom || "Sans groupe";
-          if (!membresByGroupe[g]) membresByGroupe[g] = [];
-          const name = fmtName(m.membre);
-          const extras = [m.membre?.sexe, m.fonction].filter(Boolean).join(" - ");
-          membresByGroupe[g].push(extras ? `${name} (${extras})` : name);
-        });
-        const allNames = /* @__PURE__ */ new Set();
-        membres.forEach((m) => {
-          if (m.membre?.prenom || m.membre?.nom) allNames.add(fmtName(m.membre));
-        });
-        const reunionsData = reunions.data || [];
-        const participantsParReunion = await getParticipantsParReunion(supabaseAdmin, reunionsData.map((r) => r.id));
-        const reunionsText = reunionsData.map((r) => {
-          const p = participantsParReunion[r.id];
-          const pres = p && p.presents.length > 0 ? ` \u2014 Pr\xE9sents (${p.presents.length}): ${p.presents.slice(0, 15).join(", ")}` : "";
-          const abs = p && p.absents.length > 0 ? ` \u2014 Absents: ${p.absents.slice(0, 10).join(", ")}` : "";
-          const odj = r.ordre_du_jour ? ` \u2014 ODJ: ${String(r.ordre_du_jour).slice(0, 150)}` : "";
-          return `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` \xE0 ${r.lieu}` : ""}${r.heure ? ` \xE0 ${r.heure}` : ""} ${r.compte_rendu ? "\u2705 CR r\xE9dig\xE9" : "\u274C CR manquant"}${odj}${pres}${abs}`;
-        }).join("\n") || "Aucune r\xE9union";
-        contextData = `[SECR\xC9TAIRE - R\xC9UNIONS & MEMBRES] Campagne: ${campagne.data?.nom || ""}
-
-MEMBRES (${membres.length}):
-${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):
-  ${ms.join("\n  ")}`).join("\n") || "Aucun membre"}
-
-R\xC9UNIONS (${reunionsData.length}):
-${reunionsText}
-
----
-REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map((n) => `- ${n}`).join("\n") || "Aucun"}`;
-      } else {
-        const campagne = await supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single();
-        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
-        contextData = `[MEMBRE] Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""})
-Objectif: ${campagne.data?.objectif_global || 0}FCFA
-Membres de la fondation: ${membres.length}
-Statut: ${campagne.data?.statut || ""}`;
-      }
-    } else {
-      contextData = `Aucune campagne active s\xE9lectionn\xE9e.`;
-    }
-    const systemPrompt = `Tu es l'assistant IA de la Fondation 18 Safar, une association caritative de gestion communautaire.
-
-IDENTIT\xC9: Tu es ${userName}, ${roleLabel} de la Fondation 18 Safar.
-
-STYLE:
-- R\xE9ponds en fran\xE7ais, ton professionnel mais chaleureux
-- Sois DIRECT et CONCIS
-- Utilise les donn\xE9es chiffr\xE9es pour \xE9tayer tes r\xE9ponses
-- NE R\xC9P\xC8TE JAMAIS la m\xEAme information deux fois
-
-FORMAT (adapte selon la question):
-- **\u{1F4CA} R\xE9sum\xE9** pour les synth\xE8ses financi\xE8res
-- **\u{1F4CB} D\xE9tail** pour les listes
-- **\u{1F4A1} Recommandation** pour les conseils
-- Listes \xE0 puces avec **gras** pour les chiffres importants
-- S\xE9parateurs --- entre les sections
-- 10-15 lignes max par r\xE9ponse
-
-Tu peux:
-- R\xE9pondre sur les finances, membres, r\xE9unions, groupes (selon tes acc\xE8s)
-- Faire des calculs (moyennes, pourcentages, projections)
-- Sugg\xE9rer des actions concr\xE8tes
-- Analyser les tendances et identifier les probl\xE8mes
-
-IMPORTANT - R\xD4LES ET MEMBRES:
-- Le nombre officiel de membres est celui indiqu\xE9 dans "Membres de la fondation" du contexte. Utilise TOUJOURS ce chiffre.
-- Les membres du bureau (pr\xE9sident, tr\xE9sorier, secr\xE9taire, responsable) font PARTIE des membres de la fondation.
-- Les administrateurs NE font PAS partie des membres de la fondation. Ce sont des comptes techniques avec acc\xE8s complet, pas des membres actifs. Ne les compte JAMAIS et ne les cite JAMAIS comme membres.
-
-T\xC2CHES DE R\xC9DACTION \u2014 RAPPORTS ET COMPTES RENDUS (tr\xE8s important):
-Quand on te demande un rapport, une synth\xE8se officielle ou un compte rendu, produis un document STRUCTUR\xC9, COMPLET et pr\xEAt \xE0 copier dans l'application. Suis EXACTEMENT ces mod\xE8les:
-
-MOD\xC8LE 1 \u2014 RAPPORT FINANCIER:
-# RAPPORT FINANCIER \u2014 <nom de la campagne>
-## 1. Synth\xE8se
-(2-3 phrases: recettes totales, d\xE9penses, solde, progression de l'objectif)
-## 2. Recettes
-- Cotisations: <montant> FCFA (<n> op\xE9rations)
-- Dons: <montant> FCFA (<n> dons)
-- Qu\xEAtes: <montant> FCFA (<n> qu\xEAtes)
-- **TOTAL RECETTES: <somme> FCFA**
-## 3. D\xE9penses par cat\xE9gorie
-(liste tri\xE9e de la plus grosse \xE0 la plus petite avec montants et pourcentages)
-- **TOTAL D\xC9PENSES: <somme> FCFA**
-## 4. Solde
-**Solde disponible: <montant> FCFA**
-## 5. Objectif
-<recettes> / <objectif> FCFA soit <x>% atteint.
-## 6. Observations et recommandations
-(2-4 puces factuelles bas\xE9es sur les donn\xE9es: cat\xE9gories qui pesent le plus, taux de participation aux cotisations, etc.)
-
-MOD\xC8LE 2 \u2014 RAPPORT G\xC9N\xC9RAL OU D'ACTIVIT\xC9:
-# RAPPORT <G\xC9N\xC9RAL | D'ACTIVIT\xC9> \u2014 <titre>
-## 1. Contexte et p\xE9riode
-## 2. Activit\xE9s r\xE9alis\xE9es
-## 3. R\xE9sultats chiffr\xE9s
-(chiffres du contexte uniquement)
-## 4. Difficult\xE9s rencontr\xE9es
-## 5. Recommandations et prochaines \xE9tapes
-
-MOD\xC8LE 3 \u2014 COMPTE RENDU DE R\xC9UNION:
-# COMPTE RENDU \u2014 <titre ou date de la r\xE9union>
-**Date:** <date> | **Heure:** <heure> | **Lieu:** <lieu>
-**Pr\xE9sents (<n>):** <liste des noms du contexte> | **Absents:** <liste>
-## 1. Ordre du jour
-(reprendre l'ODJ r\xE9el si pr\xE9sent dans le contexte)
-## 2. Discussions
-(point par point de l'ODJ; si les \xE9changes ne sont pas connus, indiquer "[\xC0 compl\xE9ter]")
-## 3. D\xE9cisions prises
-("[\xC0 compl\xE9ter]" si non connu - ne JAMAIS inventer une d\xE9cision)
-## 4. Actions \xE0 mener
-(tableau ou liste: action \u2014 responsable \u2014 \xE9ch\xE9ance)
-
-R\xC8GLES DE R\xC9DACTION:
-- Utilise UNIQUEMENT les chiffres, noms et faits pr\xE9sents dans le contexte. N'invente AUCUN chiffre ni nom.
-- Si une information est manquante (date, lieu, d\xE9cisions, discussions), \xE9cris explicitement "[\xC0 compl\xE9ter]" \xE0 sa place plut\xF4t que d'inventer.
-- Reste factuel, pr\xE9cis et professionnel. Chiffres en FCFA format\xE9s avec s\xE9parateurs de milliers.
-- Formatage markdown strict: titres avec ##, valeurs importantes en **gras**, listes \xE0 puces.
-- Pour un compte rendu, utilise la r\xE9union demand\xE9e (la plus r\xE9cente sans CR si aucune n'est pr\xE9cis\xE9e).
-
-SI ON TE POSE UNE QUESTION HORS DU CONTEXTE DE L'APPLICATION (politique, sport, musique, actualit\xE9s, etc.), r\xE9ponds poliment:
-"Je suis l'assistant de la Fondation 18 Safar. Je peux t'aider avec les donn\xE9es de l'association (cotisations, d\xE9penses, membres, r\xE9unions, etc.). Pour autre chose, je ne suis pas \xE9quip\xE9."
-
-IMPORTANT - ANTI-HALLUCINATION:
-- Tu dois UNIQUEMENT citer les noms de personnes qui apparaissent EXPLICITEMENT dans le "REGISTRE DES NOMS" du contexte.
-- NE JAMAIS inventer, d\xE9duire, ou compl\xE9ter un nom de membre.
-- Si on te demande un nom que tu ne vois pas dans les donn\xE9es, r\xE9ponds: "Ce nom ne figure pas dans les donn\xE9es dont je dispose."
-- Copie les noms EXACTEMENT tels qu'ils apparaissent.
-- Ne remplace JAMAIS "undefined" ou "[Membre inconnu]" par un nom invent\xE9.
-- Tu ne peux parler que des donn\xE9es dans le contexte. Si on te demande quelque chose hors de ton r\xF4le, explique que tu n'as pas acc\xE8s.`;
-    if (!GROQ_API_KEY) {
-      return new Response(JSON.stringify({ error: "Cl\xE9 IA non configur\xE9e" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-    const body = {
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: contextData ? `${contextData}
-
----
-Question: ${message}` : message }
-      ],
-      temperature: 0.3,
-      max_tokens: 3500
-    };
-    console.log("[ai] user:", userName, "role:", roleLabel, "msg:", message.slice(0, 80));
-    const groqRes = await fetch(GROQ_BASE, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const groqData = await groqRes.json();
-    if (!groqRes.ok) {
-      console.error("[groq] error:", groqRes.status, JSON.stringify(groqData));
-      return new Response(JSON.stringify({ error: "Erreur IA" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-    const reply = groqData.choices?.[0]?.message?.content || "Pas de r\xE9ponse.";
-    return new Response(JSON.stringify({ reply }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-  } catch (err) {
-    console.error("[ai] fatal:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+  } catch {
+    return null;
   }
-});
+}
+function GroupeDetail() {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const { campagneActive } = useCampagneContext();
+  const queryClient = useQueryClient();
+  const [nouveauResponsableId, setNouveauResponsableId] = useState("");
+  const [addingResponsable, setAddingResponsable] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [addingMembreId, setAddingMembreId] = useState(null);
+  const { data: groupe, isLoading, error } = useQuery({
+    queryKey: ["groupe-detail", id, campagneActive?.id],
+    queryFn: () => groupesService.getDetail(id, campagneActive.id),
+    enabled: !!id && !!campagneActive?.id
+  });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["groupe-detail", id] });
+    queryClient.invalidateQueries({ queryKey: ["groupes-stats"] });
+  };
+  const handleAddResponsable = async (e) => {
+    e.preventDefault();
+    if (!nouveauResponsableId) return;
+    setAddingResponsable(true);
+    try {
+      await groupesService.addResponsable(campagneActive.id, id, nouveauResponsableId, user.id);
+      setNouveauResponsableId("");
+      invalidate();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setAddingResponsable(false);
+    }
+  };
+  const handleRemoveResponsable = async (responsableId) => {
+    if (!confirm("Retirer ce responsable ?")) return;
+    try {
+      await groupesService.removeResponsable(responsableId, { userId: user.id, campagneId: campagneActive.id });
+      invalidate();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) return;
+    setSearching(true);
+    try {
+      const results = await membresService.searchForGroupe(campagneActive.id, searchQuery);
+      setSearchResults(results);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSearching(false);
+    }
+  };
+  const handleAddMembre = async (membreId) => {
+    setAddingMembreId(membreId);
+    try {
+      await groupesService.assignMembre(campagneActive.id, id, membreId, user.id);
+      setSearchResults((prev) => prev.filter((m) => m.id !== membreId));
+      invalidate();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setAddingMembreId(null);
+    }
+  };
+  const handleRemoveMembre = async (cm) => {
+    if (!confirm(`Retirer ${cm.membre.prenom} ${cm.membre.nom} de ce groupe ? (il reste membre)`)) return;
+    try {
+      await groupesService.removeMembreFromGroupe(cm.id, { userId: user.id, campagneId: campagneActive.id });
+      invalidate();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  if (!campagneActive) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Aucune campagne active.");
+  if (isLoading) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Chargement...");
+  if (error) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-red-600 p-4" }, "Erreur : ", error.message);
+  if (!groupe) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Groupe introuvable.");
+  const responsableIds = new Set(groupe.responsables.map((r) => r.membre.id));
+  const candidatsResponsable = groupe.membres.filter((m) => !responsableIds.has(m.membre.id));
+  const buildRows = () => groupe.membres.map((cm) => ({
+    numero: cm.membre.numero_membre,
+    nom: cm.membre.nom,
+    prenom: cm.membre.prenom,
+    telephone: cm.membre.telephone || "",
+    fonction: cm.fonction || "",
+    role: responsableIds.has(cm.membre.id) ? "Responsable" : "Membre"
+  }));
+  const slug = groupe.nom.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const handleExportPdf = async () => {
+    const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
+      loadLogoBase64(),
+      import("jspdf"),
+      import("jspdf-autotable")
+    ]);
+    const rows = buildRows();
+    const doc = new jsPDF();
+    if (logo) {
+      try {
+        doc.addImage(logo, "JPEG", 178, 10, 18, 18);
+      } catch {
+      }
+    }
+    doc.setFontSize(14);
+    doc.text(`Groupe : ${groupe.nom}`, 14, 16);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Campagne : ${campagneActive.nom} \u2014 ${rows.length} membre(s)`, 14, 22);
+    const responsablesTxt = groupe.responsables.length ? groupe.responsables.map((r) => `${r.membre.prenom} ${r.membre.nom}`).join(", ") : "Aucun responsable d\xE9sign\xE9";
+    doc.text(`Responsable(s) : ${responsablesTxt}`, 14, 28);
+    autoTable(doc, {
+      startY: 34,
+      head: [["N\xB0", "Nom", "Pr\xE9nom", "T\xE9l\xE9phone", "Fonction", "R\xF4le"]],
+      body: rows.map((r) => [r.numero, r.nom, r.prenom, r.telephone || "-", r.fonction || "-", r.role]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [15, 118, 110] },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.row.raw[5] === "Responsable") {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.textColor = [15, 118, 110];
+        }
+      }
+    });
+    doc.save(`groupe-${slug}.pdf`);
+  };
+  const handleExportExcel = async () => {
+    const XLSX = await import("xlsx");
+    const rows = buildRows().map((r) => ({
+      "N\xB0 membre": r.numero,
+      "Nom": r.nom,
+      "Pr\xE9nom": r.prenom,
+      "T\xE9l\xE9phone": r.telephone,
+      "Fonction": r.fonction,
+      "R\xF4le": r.role
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, groupe.nom.slice(0, 31));
+    XLSX.writeFile(wb, `groupe-${slug}.xlsx`);
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "max-w-2xl mx-auto space-y-6 sm:space-y-8 pb-8" }, /* @__PURE__ */ React.createElement("div", { className: "sticky top-0 z-10 -mx-4 sm:mx-0 px-4 sm:px-0 pt-3 pb-3 sm:pt-0 sm:pb-0 bg-gray-50/95 dark:bg-gray-950/95 sm:bg-transparent backdrop-blur sm:backdrop-blur-none border-b border-gray-200 dark:border-gray-800 sm:border-0" }, /* @__PURE__ */ React.createElement(
+    Link,
+    {
+      to: "/groupes",
+      className: "inline-flex items-center gap-1.5 -ml-1 px-1 py-1 text-sm text-primary-700 dark:text-primary-400 active:opacity-60"
+    },
+    /* @__PURE__ */ React.createElement(ArrowLeft, { className: "h-4 w-4 shrink-0" }),
+    "Groupes"
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-3 mt-1" }, /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("h1", { className: "text-lg font-semibold truncate" }, groupe.nom), !groupe.actif && /* @__PURE__ */ React.createElement("span", { className: "shrink-0 text-xs rounded-full bg-gray-200 dark:bg-gray-800 px-2 py-0.5 text-gray-600 dark:text-gray-400" }, "D\xE9sactiv\xE9")), groupe.description && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 mt-1 line-clamp-2" }, groupe.description))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mt-3" }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: handleExportPdf,
+      className: "flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700"
+    },
+    /* @__PURE__ */ React.createElement(FileDown, { className: "h-3.5 w-3.5" }),
+    "Export PDF"
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: handleExportExcel,
+      className: "flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700"
+    },
+    /* @__PURE__ */ React.createElement(FileSpreadsheet, { className: "h-3.5 w-3.5" }),
+    "Export Excel"
+  ))), /* @__PURE__ */ React.createElement("section", { className: "rounded-2xl border border-gray-200 dark:border-gray-800 p-4 sm:p-5 space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Responsables"), groupe.responsables.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Aucun responsable d\xE9sign\xE9 pour cette campagne."), groupe.responsables.map((r) => /* @__PURE__ */ React.createElement("div", { key: r.id, className: "flex items-center justify-between gap-3 text-sm" }, /* @__PURE__ */ React.createElement("span", { className: "min-w-0 truncate" }, r.membre.prenom, " ", r.membre.nom, " ", /* @__PURE__ */ React.createElement("span", { className: "text-gray-500" }, "\xB7 N\xB0 ", r.membre.numero_membre)), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => handleRemoveResponsable(r.id),
+      className: "shrink-0 text-xs text-red-600 hover:underline py-1"
+    },
+    "Retirer"
+  ))), candidatsResponsable.length > 0 && /* @__PURE__ */ React.createElement(
+    "form",
+    {
+      onSubmit: handleAddResponsable,
+      className: "flex flex-col sm:flex-row gap-2 pt-3 border-t border-gray-200 dark:border-gray-800"
+    },
+    /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value: nouveauResponsableId,
+        onChange: (e) => setNouveauResponsableId(e.target.value),
+        className: selectCls
+      },
+      /* @__PURE__ */ React.createElement("option", { value: "" }, "D\xE9signer un responsable..."),
+      candidatsResponsable.map((m) => /* @__PURE__ */ React.createElement("option", { key: m.membre.id, value: m.membre.id }, m.membre.prenom, " ", m.membre.nom))
+    ),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "submit",
+        disabled: addingResponsable || !nouveauResponsableId,
+        className: "shrink-0 rounded-lg bg-primary-700 text-white px-4 py-2 text-sm font-medium hover:bg-primary-800 disabled:opacity-50"
+      },
+      "Ajouter"
+    )
+  ), candidatsResponsable.length === 0 && groupe.membres.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-gray-500" }, "Ajoute d'abord des membres \xE0 ce groupe pour pouvoir d\xE9signer un responsable.")), /* @__PURE__ */ React.createElement("section", { className: "rounded-2xl border border-gray-200 dark:border-gray-800 p-4 sm:p-5 space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Ajouter un membre au groupe"), /* @__PURE__ */ React.createElement("form", { onSubmit: handleSearch, className: "flex flex-col sm:flex-row gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "relative flex-1" }, /* @__PURE__ */ React.createElement(Search, { className: "absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      placeholder: "Rechercher par nom, pr\xE9nom ou n\xB0 membre...",
+      value: searchQuery,
+      onChange: (e) => setSearchQuery(e.target.value),
+      className: `pl-9 ${inputCls}`
+    }
+  )), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "submit",
+      disabled: searching,
+      className: "shrink-0 rounded-lg bg-primary-700 text-white px-4 py-2 text-sm font-medium hover:bg-primary-800 disabled:opacity-50"
+    },
+    searching ? "..." : "Chercher"
+  )), searchResults.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5 pt-1" }, searchResults.map((m) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: m.id,
+      className: "flex items-center justify-between gap-3 text-sm rounded-lg border border-gray-200 dark:border-gray-800 px-3 py-2.5"
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "min-w-0 truncate" }, m.prenom, " ", m.nom, " ", /* @__PURE__ */ React.createElement("span", { className: "text-gray-500" }, "\xB7 N\xB0 ", m.numero_membre)),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        onClick: () => handleAddMembre(m.id),
+        disabled: addingMembreId === m.id,
+        className: "shrink-0 inline-flex items-center gap-1 text-xs text-primary-700 dark:text-primary-400 hover:underline disabled:opacity-50"
+      },
+      /* @__PURE__ */ React.createElement(UserPlus, { className: "h-3.5 w-3.5" }),
+      addingMembreId === m.id ? "Ajout..." : "Ajouter"
+    )
+  )))), /* @__PURE__ */ React.createElement("section", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Membres (", groupe.membres.length, ")"), groupe.membres.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Aucun membre dans ce groupe pour cette campagne."), /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, groupe.membres.map((cm) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: cm.id,
+      className: "flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-50 dark:hover:bg-gray-900"
+    },
+    /* @__PURE__ */ React.createElement(Link, { to: `/membres/${cm.membre.id}`, className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-medium truncate" }, cm.membre.prenom, " ", cm.membre.nom), /* @__PURE__ */ React.createElement("p", { className: "text-xs text-gray-500 truncate" }, "N\xB0 ", cm.membre.numero_membre, cm.fonction ? ` \xB7 ${cm.fonction}` : "")),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 shrink-0" }, responsableIds.has(cm.membre.id) && /* @__PURE__ */ React.createElement("span", { className: "hidden xs:inline text-xs rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-2 py-0.5" }, "Responsable"), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        onClick: () => handleRemoveMembre(cm),
+        title: "Retirer du groupe",
+        className: "p-1.5 rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+      },
+      /* @__PURE__ */ React.createElement(X, { className: "h-4 w-4" })
+    ))
+  )))));
+}
+export {
+  GroupeDetail as default
+};

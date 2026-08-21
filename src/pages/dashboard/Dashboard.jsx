@@ -6,6 +6,8 @@ import { useAuth } from '../../hooks/useAuth.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useRole } from '../../hooks/useRole.js';
 import { supabase } from '../../lib/supabaseClient.js';
+import { fetchAllPages } from '../../lib/supabaseFetch.js';
+import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { donsService } from '../../services/dons.service.js';
 import { quetesService } from '../../services/quetes.service.js';
@@ -104,26 +106,7 @@ export default function Dashboard() {
 
   const { data: nbMembres } = useQuery({
     queryKey: ['dashboard-membres', campagneActive?.id],
-    queryFn: async () => {
-      // Exclure les admins globaux (campagne_id = null) comme
-      // le fait getByCampagneAvecRoles dans MembresList
-      const { data: adminRoles } = await supabase
-        .from('user_roles')
-        .select('user_id')
-        .eq('role', 'administrateur')
-        .is('campagne_id', null);
-      const excludeIds = (adminRoles || []).map((r) => r.user_id);
-
-      let q = supabase
-        .from('membres')
-        .select('*', { count: 'exact', head: true });
-      if (excludeIds.length > 0) {
-        q = q.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
-      }
-      const { count, error } = await q;
-      if (error) throw error;
-      return count;
-    },
+    queryFn: () => membresService.countMembres(),
     enabled: !!campagneActive
   });
 
@@ -137,12 +120,14 @@ export default function Dashboard() {
       // cette campagne", on compte les groupe_id distincts utilises dans
       // campagne_membres pour cette campagne, plutot que de filtrer
       // directement sur "groupes" (qui causait le 400 Bad Request).
-      const { data, error } = await supabase
-        .from('campagne_membres')
-        .select('groupe_id')
-        .eq('campagne_id', campagneActive.id)
-        .not('groupe_id', 'is', null);
-      if (error) throw error;
+      // Paginé : pas de limite sur le nombre de fiches analysées.
+      const data = await fetchAllPages(() =>
+        supabase
+          .from('campagne_membres')
+          .select('groupe_id')
+          .eq('campagne_id', campagneActive.id)
+          .not('groupe_id', 'is', null)
+      );
       return new Set(data.map((r) => r.groupe_id)).size;
     },
     enabled: !!campagneActive

@@ -22,72 +22,82 @@ function fmtPct(part: number, total: number): string {
   return Math.round(part / total * 100) + "%";
 }
 
-// Roster UNIFIÉ des membres de la campagne, identique à la logique du front
-// (getByCampagneAvecRoles + Dashboard) :
-//  - fiches campagne_membres actives de la campagne
-//  - + membres du bureau (président/trésorier/secrétaire) qui n'ont pas de fiche
-//    campagne_membres (ajoutés comme fiches virtuelles)
-//  - - administrateurs GLOBAUX (campagne_id = null) : comptes techniques,
-//    ils ne sont PAS des membres de la fondation
+const PAGE_SIZE = 1000;
+
+// PostgREST renvoie 1000 lignes max par requête. fetchAll pagine avec
+// .range() pour récupérer TOUTES les lignes, sans limite.
+async function fetchAll(buildQuery: () => any): Promise<any[]> {
+  const out: any[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = data || [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return out;
+}
+
+// IDs des administrateurs GLOBAUX (campagne_id = null) : comptes techniques,
+// ils ne sont PAS des membres de la fondation.
+async function getGlobalAdminUserIds(supabaseAdmin: any): Promise<Set<string>> {
+  const { data } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id")
+    .eq("role", "administrateur")
+    .is("campagne_id", null);
+  return new Set((data || []).map((r: any) => r.user_id));
+}
+
+// Roster UNIFIÉ et COMPLET des membres, identique au front (Dashboard +
+// MembresList) :
+//  - TOUS les membres de la table "membres" : membres simples ET membres du
+//    bureau (président/trésorier/secrétaire). Le total correspond donc
+//    EXACTEMENT au chiffre affiché dans l'application.
+//  - SAUF les comptes liés à un administrateur GLOBAL (campagne_id = null) :
+//    comptes techniques, ils ne font PAS partie des membres.
+//  - Chaque membre est enrichi de son rattachement campagne (groupe/fonction)
+//    s'il existe ; sinon fiche virtuelle sans groupe.
+//  - Paginé : aucune limite sur le nombre de membres.
 async function getRosterCampagne(supabaseAdmin: any, campagneId: string): Promise<any[]> {
-  const [{ data: fiches }, { data: roles }] = await Promise.all([
-    supabaseAdmin
-      .from("campagne_membres")
-      .select("*, membre:membres(nom,prenom,sexe,telephone,numero_membre,user_id), groupe:groupes(nom)")
-      .eq("campagne_id", campagneId)
-      .eq("statut", "actif"),
-    supabaseAdmin
-      .from("user_roles")
-      .select("user_id, role, campagne_id")
-      .in("role", ["president", "tresorier", "secretaire", "administrateur"]),
+  const adminIds = await getGlobalAdminUserIds(supabaseAdmin);
+
+  const [fiches, membres] = await Promise.all([
+    fetchAll(() =>
+      supabaseAdmin
+        .from("campagne_membres")
+        .select("id, membre_id, fonction, statut, groupe:groupes(nom)")
+        .eq("campagne_id", campagneId)
+        .order("membre_id")
+    ),
+    fetchAll(() =>
+      supabaseAdmin
+        .from("membres")
+        .select("id,nom,prenom,sexe,telephone,numero_membre,user_id")
+        .order("nom")
+        .order("prenom")
+    ),
   ]);
 
-  const allFiches: any[] = fiches || [];
+  const ficheByMembreId = new Map(fiches.map((f: any) => [f.membre_id, f]));
 
-  // Admins globaux → exclus du roster des membres
-  const globalAdminUserIds = new Set<string>(
-    (roles || [])
-      .filter((r: any) => r.role === "administrateur" && r.campagne_id === null)
-      .map((r: any) => r.user_id)
-  );
-
-  // Rôle bureau le plus prioritaire par utilisateur (hors admins globaux)
-  const ROLE_PRIORITY = ["administrateur", "president", "tresorier", "secretaire"];
-  const roleByUserId = new Map<string, string>();
-  (roles || [])
-    .filter((r: any) => !globalAdminUserIds.has(r.user_id) && (r.campagne_id === null || r.campagne_id === campagneId))
-    .forEach((r: any) => {
-      const current = roleByUserId.get(r.user_id);
-      if (!current || ROLE_PRIORITY.indexOf(r.role) < ROLE_PRIORITY.indexOf(current)) {
-        roleByUserId.set(r.user_id, r.role);
-      }
+  return membres
+    .filter((m: any) => !adminIds.has(m.user_id))
+    .map((m: any) => {
+      const f = ficheByMembreId.get(m.id);
+      return {
+        id: f?.id ?? null,
+        campagne_id: campagneId,
+        membre_id: m.id,
+        groupe_id: null,
+        fonction: f?.fonction ?? null,
+        statut: f?.statut ?? null,
+        membre: m,
+        groupe: f?.groupe ?? null,
+      };
     });
-
-  // Membres du bureau sans fiche campagne_membres → fiches virtuelles
-  const userIdsFromFiches = new Set(
-    allFiches.map((f: any) => f.membre?.user_id).filter(Boolean)
-  );
-  const missingUserIds = [...roleByUserId.keys()].filter((uid) => !userIdsFromFiches.has(uid));
-
-  let extraFiches: any[] = [];
-  if (missingUserIds.length > 0) {
-    const { data: extraMembres } = await supabaseAdmin
-      .from("membres")
-      .select("id,nom,prenom,sexe,telephone,numero_membre,user_id")
-      .in("user_id", missingUserIds);
-    extraFiches = (extraMembres || []).map((m: any) => ({
-      id: null,
-      campagne_id: campagneId,
-      membre_id: m.id,
-      groupe_id: null,
-      fonction: null,
-      statut: "actif",
-      membre: m,
-      groupe: null,
-    }));
-  }
-
-  return [...allFiches, ...extraFiches].filter((f: any) => !globalAdminUserIds.has(f.membre?.user_id));
 }
 
 // Présences par réunion (présents/absents) — nécessaires pour rédiger
@@ -95,10 +105,13 @@ async function getRosterCampagne(supabaseAdmin: any, campagneId: string): Promis
 async function getParticipantsParReunion(supabaseAdmin: any, reunionIds: string[]): Promise<Record<string, { presents: string[]; absents: string[] }>> {
   const map: Record<string, { presents: string[]; absents: string[] }> = {};
   if (!reunionIds || reunionIds.length === 0) return map;
-  const { data } = await supabaseAdmin
-    .from("reunion_participants")
-    .select("reunion_id, statut_presence, membre:membres(nom,prenom)")
-    .in("reunion_id", reunionIds);
+  const data = await fetchAll(() =>
+    supabaseAdmin
+      .from("reunion_participants")
+      .select("reunion_id, statut_presence, membre:membres(nom,prenom)")
+      .in("reunion_id", reunionIds)
+      .order("id")
+  );
   (data || []).forEach((p: any) => {
     if (!map[p.reunion_id]) map[p.reunion_id] = { presents: [], absents: [] };
     const name = fmtName(p.membre);
@@ -175,31 +188,26 @@ Deno.serve(async (req) => {
       // ADMIN : accès à TOUTES les données
       // ============================================================
       if (isAdmin) {
-        // Requête SANS limite pour les agrégations (membres, cotisations)
-        const [cotisationsAll, depensesAll, donsAll, quetesAll, reunionsAll, campagne, objectifs, groupes] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom,numero_membre)").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId),
-          supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
+        // Requêtes PAGINÉES : aucune limite sur le nombre de lignes
+        const [cotisations, depenses, dons, quetes, reunions, campagneRes, objectifs, groupes] = await Promise.all([
+          fetchAll(() => supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom,numero_membre)").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }).order("id")),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
-          supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId),
+          fetchAll(() => supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId).order("created_at")),
           supabaseAdmin.from("groupes").select("*").eq("actif", true),
         ]);
         const membres = await getRosterCampagne(supabaseAdmin, campagneId);
-
-        const cotisations = cotisationsAll.data || [];
-        const depenses = depensesAll.data || [];
-        const dons = donsAll.data || [];
-        const quetes = quetesAll.data || [];
-        const reunions = reunionsAll.data || [];
+        const campagne = campagneRes.data;
 
         const tc = cotisations.reduce((s: number, c: any) => s + Number(c.montant), 0);
         const td = depenses.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
         const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne.data?.objectif_global || 0);
+        const objectif = Number(campagne?.objectif_global || 0);
 
         const depensesByCat: Record<string, number> = {};
         depenses.forEach((d: any) => { depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant); });
@@ -259,8 +267,8 @@ Deno.serve(async (req) => {
         }).join("\n") || "Aucune";
 
         contextData = `[ADMIN - ACCÈS COMPLET] Fondation 18 Safar
-Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""}) | Statut: ${campagne.data?.statut || ""}
-Objectif: ${objectif}FCFA | Cotisation H: ${campagne.data?.cotisation_homme || 0}FCFA | F: ${campagne.data?.cotisation_femme || 0}FCFA
+Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""}) | Statut: ${campagne?.statut || ""}
+Objectif: ${objectif}FCFA | Cotisation H: ${campagne?.cotisation_homme || 0}FCFA | F: ${campagne?.cotisation_femme || 0}FCFA
 
 CHIFFRES:
 - Cotisations: ${tc}FCFA (${cotisations.length} ops)
@@ -269,7 +277,7 @@ CHIFFRES:
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
 - Membres de la fondation: ${membres.length}
-- NOTE: Ce total est la liste officielle des membres (bureau inclus). Les administrateurs sont des comptes techniques et ne font PAS partie des membres.
+- NOTE: Ce total est la liste officielle et complète des membres (membres simples ET membres du bureau). Les administrateurs sont des comptes techniques et ne font PAS partie des membres.
 
 DÉPENSES PAR CATÉGORIE:
 ${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
@@ -305,38 +313,46 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // PRÉSIDENT : vue d'ensemble (tous les totaux, pas de détails individuels)
       // ============================================================
       else if (isPresident) {
-        const [cotisations, depenses, dons, quetes, reunions, campagne, objectifs] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("montant").eq("campagne_id", campagneId),
-          supabaseAdmin.from("reunions").select("id, compte_rendu").eq("campagne_id", campagneId),
+        // Requêtes PAGINÉES : aucune limite sur le nombre de lignes
+        const [cotisationsRes, depensesRes, donsRes, quetesRes, reunionsRes, campagneRes, objectifs] = await Promise.all([
+          fetchAll(() => supabaseAdmin.from("cotisations").select("montant").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("depenses").select("montant").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("dons").select("montant").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("quetes").select("montant").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("reunions").select("id, compte_rendu").eq("campagne_id", campagneId).order("id")),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
-          supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId),
+          fetchAll(() => supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId).order("created_at")),
         ]);
         const membres = await getRosterCampagne(supabaseAdmin, campagneId);
 
-        const tc = (cotisations.data || []).reduce((s: number, c: any) => s + Number(c.montant), 0);
-        const td = (depenses.data || []).reduce((s: number, d: any) => s + Number(d.montant), 0);
-        const tdon = (dons.data || []).reduce((s: number, d: any) => s + Number(d.montant), 0);
-        const tq = (quetes.data || []).reduce((s: number, q: any) => s + Number(q.montant), 0);
-        const objectif = Number(campagne.data?.objectif_global || 0);
+        const cotisations = cotisationsRes;
+        const depenses = depensesRes;
+        const dons = donsRes;
+        const quetes = quetesRes;
+        const reunions = reunionsRes;
+        const campagne = campagneRes.data;
 
-        const objectifsText = (objectifs.data || []).map((o: any) => `${o.activite_nom || "Global"}: ${o.montant_cible}FCFA`).join(", ");
-        const reunionsAvecCR = (reunions.data || []).filter((r: any) => r.compte_rendu).length;
+        const tc = cotisations.reduce((s: number, c: any) => s + Number(c.montant), 0);
+        const td = depenses.reduce((s: number, d: any) => s + Number(d.montant), 0);
+        const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
+        const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
+        const objectif = Number(campagne?.objectif_global || 0);
+
+        const objectifsText = objectifs.map((o: any) => `${o.activite_nom || "Global"}: ${o.montant_cible}FCFA`).join(", ");
+        const reunionsAvecCR = reunions.filter((r: any) => r.compte_rendu).length;
 
         contextData = `[PRÉSIDENT - VUE D'ENSEMBLE] Fondation 18 Safar
-Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""}) | Objectif: ${objectif}FCFA
+Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""}) | Objectif: ${objectif}FCFA
 
 CHIFFRES:
-- Cotisations: ${tc}FCFA (${(cotisations.data || []).length} ops)
-- Dépenses: ${td}FCFA (${(depenses.data || []).length} ops)
-- Dons: ${tdon}FCFA (${(dons.data || []).length} ops)
-- Quêtes: ${tq}FCFA (${(quetes.data || []).length} ops)
+- Cotisations: ${tc}FCFA (${cotisations.length} ops)
+- Dépenses: ${td}FCFA (${depenses.length} ops)
+- Dons: ${tdon}FCFA (${dons.length} ops)
+- Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${tc + tdon + tq - td}FCFA
 - Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
 - Membres de la fondation: ${membres.length}
-- Réunions: ${(reunions.data || []).length} (${reunionsAvecCR} avec CR)
+- Réunions: ${reunions.length} (${reunionsAvecCR} avec CR)
 
 OBJECTIFS: ${objectifsText || "Aucun"}`;
       }
@@ -345,25 +361,22 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
       // TRÉSORIER : finances uniquement
       // ============================================================
       else if (isTresorier) {
-        const [cotisationsAll, depensesAll, donsAll, quetesAll, campagne] = await Promise.all([
-          supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom)").eq("campagne_id", campagneId),
-          supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId),
-          supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId),
+        // Requêtes PAGINÉES : aucune limite sur le nombre de lignes
+        const [cotisations, depenses, dons, quetes, campagneRes] = await Promise.all([
+          fetchAll(() => supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom)").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId).order("created_at")),
+          fetchAll(() => supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId).order("created_at")),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
         ]);
-
-        const cotisations = cotisationsAll.data || [];
-        const depenses = depensesAll.data || [];
-        const dons = donsAll.data || [];
-        const quetes = quetesAll.data || [];
+        const campagne = campagneRes.data;
 
         const tc = cotisations.reduce((s: number, c: any) => s + Number(c.montant), 0);
         const td = depenses.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
         const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne.data?.objectif_global || 0);
+        const objectif = Number(campagne?.objectif_global || 0);
 
         const depensesByCat: Record<string, number> = {};
         depenses.forEach((d: any) => { depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant); });
@@ -379,7 +392,7 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
         const allNames = new Set<string>();
         cotisations.forEach((c: any) => { if (c.membre?.prenom || c.membre?.nom) allNames.add(fmtName(c.membre)); });
 
-        contextData = `[TRÉSORIER - FINANCES] Campagne: ${campagne.data?.nom || ""} | Objectif: ${objectif}FCFA
+        contextData = `[TRÉSORIER - FINANCES] Campagne: ${campagne?.nom || ""} | Objectif: ${objectif}FCFA
 
 CHIFFRES:
 - Cotisations: ${tc}FCFA (${cotisations.length} ops)
@@ -415,11 +428,13 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // SECRÉTAIRE : réunions + membres
       // ============================================================
       else if (isSecretaire) {
-        const [reunions, campagne] = await Promise.all([
-          supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
+        // Requêtes PAGINÉES : aucune limite sur le nombre de lignes
+        const [reunions, campagneRes] = await Promise.all([
+          fetchAll(() => supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }).order("id")),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
         ]);
         const membres = await getRosterCampagne(supabaseAdmin, campagneId);
+        const campagne = campagneRes.data;
 
         const membresByGroupe: Record<string, string[]> = {};
         membres.forEach((m: any) => {
@@ -433,7 +448,7 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
         const allNames = new Set<string>();
         membres.forEach((m: any) => { if (m.membre?.prenom || m.membre?.nom) allNames.add(fmtName(m.membre)); });
 
-        const reunionsData = reunions.data || [];
+        const reunionsData = reunions;
         const participantsParReunion = await getParticipantsParReunion(supabaseAdmin, reunionsData.map((r: any) => r.id));
         const reunionsText = reunionsData.map((r: any) => {
           const p = participantsParReunion[r.id];
@@ -443,9 +458,9 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
           return `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` à ${r.lieu}` : ""}${r.heure ? ` à ${r.heure}` : ""} ${r.compte_rendu ? "✅ CR rédigé" : "❌ CR manquant"}${odj}${pres}${abs}`;
         }).join("\n") || "Aucune réunion";
 
-        contextData = `[SECRÉTAIRE - RÉUNIONS & MEMBRES] Campagne: ${campagne.data?.nom || ""}
+        contextData = `[SECRÉTAIRE - RÉUNIONS & MEMBRES] Campagne: ${campagne?.nom || ""}
 
-MEMBRES (${membres.length}):
+MEMBRES (${membres.length}) - liste officielle complète : membres simples ET membres du bureau (les administrateurs n'en font pas partie):
 ${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):\n  ${ms.join("\n  ")}`).join("\n") || "Aucun membre"}
 
 RÉUNIONS (${reunionsData.length}):
@@ -460,13 +475,14 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // AUTRES RÔLES : données de base
       // ============================================================
       else {
-        const campagne = await supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single();
+        const campagneRes = await supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single();
         const membres = await getRosterCampagne(supabaseAdmin, campagneId);
+        const campagne = campagneRes.data;
 
-        contextData = `[MEMBRE] Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""})
-Objectif: ${campagne.data?.objectif_global || 0}FCFA
+        contextData = `[MEMBRE] Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""})
+Objectif: ${campagne?.objectif_global || 0}FCFA
 Membres de la fondation: ${membres.length}
-Statut: ${campagne.data?.statut || ""}`;
+Statut: ${campagne?.statut || ""}`;
       }
     } else {
       contextData = `Aucune campagne active sélectionnée.`;
@@ -497,8 +513,8 @@ Tu peux:
 - Analyser les tendances et identifier les problèmes
 
 IMPORTANT - RÔLES ET MEMBRES:
-- Le nombre officiel de membres est celui indiqué dans "Membres de la fondation" du contexte. Utilise TOUJOURS ce chiffre.
-- Les membres du bureau (président, trésorier, secrétaire, responsable) font PARTIE des membres de la fondation.
+- Le nombre officiel de membres est celui indiqué dans "Membres de la fondation" du contexte. Utilise TOUJOURS ce chiffre, il est EXACT et complet (aucune limite, liste exhaustive).
+- TOUS les membres font partie du total : les membres simples ET les membres du bureau (président, trésorier, secrétaire, responsables). Le bureau n'est pas compté à part.
 - Les administrateurs NE font PAS partie des membres de la fondation. Ce sont des comptes techniques avec accès complet, pas des membres actifs. Ne les compte JAMAIS et ne les cite JAMAIS comme membres.
 
 TÂCHES DE RÉDACTION — RAPPORTS ET COMPTES RENDUS (très important):

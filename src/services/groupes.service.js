@@ -1,32 +1,42 @@
 import { supabase } from '../lib/supabaseClient.js';
+import { fetchAllPages } from '../lib/supabaseFetch.js';
 import { auditLogsService } from './auditLogs.service.js';
+import { membresService } from './membres.service.js';
 
 export const groupesService = {
   // Liste des groupes avec nombre de membres et responsables pour la campagne donnée.
+  // Les comptes liés à un admin global sont exclus : ils ne font pas partie des membres.
   async getAllWithStats(campagneId) {
-    const { data: groupes, error } = await supabase.from('groupes').select('*').order('nom');
+    const [{ data: groupes, error }, adminIds] = await Promise.all([
+      supabase.from('groupes').select('*').order('nom'),
+      membresService.getGlobalAdminUserIds(),
+    ]);
     if (error) throw error;
 
-    const { data: rattachements, error: cmErr } = await supabase
-      .from('campagne_membres')
-      .select('groupe_id')
-      .eq('campagne_id', campagneId)
-      .not('groupe_id', 'is', null);
-    if (cmErr) throw cmErr;
+    // Paginé : pas de limite sur le nombre de rattachements comptés
+    const rattachements = await fetchAllPages(() =>
+      supabase
+        .from('campagne_membres')
+        .select('groupe_id, membre:membres(user_id)')
+        .eq('campagne_id', campagneId)
+        .not('groupe_id', 'is', null)
+    );
 
     const { data: responsables, error: rErr } = await supabase
       .from('campagne_groupe_responsables')
-      .select('groupe_id, membre:membres(id, nom, prenom)')
+      .select('groupe_id, membre:membres(id, nom, prenom, user_id)')
       .eq('campagne_id', campagneId);
     if (rErr) throw rErr;
 
     const countByGroupe = {};
     for (const r of rattachements) {
+      if (adminIds.has(r.membre?.user_id)) continue;
       countByGroupe[r.groupe_id] = (countByGroupe[r.groupe_id] || 0) + 1;
     }
 
     const responsablesByGroupe = {};
     for (const r of responsables) {
+      if (adminIds.has(r.membre?.user_id)) continue;
       if (!responsablesByGroupe[r.groupe_id]) responsablesByGroupe[r.groupe_id] = [];
       responsablesByGroupe[r.groupe_id].push(r.membre);
     }
@@ -39,23 +49,31 @@ export const groupesService = {
   },
 
   // Détail d'un groupe : infos + membres (campagne active) + responsables (campagne active).
+  // Les comptes liés à un admin global sont exclus des deux listes.
   async getDetail(groupeId, campagneId) {
-    const { data: groupe, error } = await supabase.from('groupes').select('*').eq('id', groupeId).single();
+    const [{ data: groupe, error }, adminIds] = await Promise.all([
+      supabase.from('groupes').select('*').eq('id', groupeId).single(),
+      membresService.getGlobalAdminUserIds(),
+    ]);
     if (error) throw error;
 
-    const { data: membres, error: mErr } = await supabase
-      .from('campagne_membres')
-      .select('id, fonction, statut, membre:membres(*)')
-      .eq('campagne_id', campagneId)
-      .eq('groupe_id', groupeId);
-    if (mErr) throw mErr;
+    const [membresRes, responsablesRes] = await Promise.all([
+      supabase
+        .from('campagne_membres')
+        .select('id, fonction, statut, membre:membres(*)')
+        .eq('campagne_id', campagneId)
+        .eq('groupe_id', groupeId),
+      supabase
+        .from('campagne_groupe_responsables')
+        .select('id, membre:membres(*)')
+        .eq('campagne_id', campagneId)
+        .eq('groupe_id', groupeId),
+    ]);
+    if (membresRes.error) throw membresRes.error;
+    if (responsablesRes.error) throw responsablesRes.error;
 
-    const { data: responsables, error: rErr } = await supabase
-      .from('campagne_groupe_responsables')
-      .select('id, membre:membres(*)')
-      .eq('campagne_id', campagneId)
-      .eq('groupe_id', groupeId);
-    if (rErr) throw rErr;
+    const membres = (membresRes.data || []).filter((cm) => !adminIds.has(cm.membre?.user_id));
+    const responsables = (responsablesRes.data || []).filter((r) => !adminIds.has(r.membre?.user_id));
 
     return { ...groupe, membres, responsables };
   },
