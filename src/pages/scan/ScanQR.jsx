@@ -7,6 +7,7 @@ import { useRole } from '../../hooks/useRole.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
+import { unlockAudio, playScanSuccess, playScanError } from '../../lib/sounds.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
 const inputCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 w-full focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all";
@@ -117,9 +118,11 @@ export default function ScanQR() {
     try {
       const data = await membresService.getFicheByQrCode(qrValue, campagneActive?.id);
       if (!data) {
+        playScanError();
         setLookupError("Aucun membre ne correspond à ce code pour la campagne active.");
         return;
       }
+      playScanSuccess();
       setMembre(data);
 
       // Add to scan history
@@ -146,6 +149,7 @@ export default function ScanQR() {
       }
     } catch (err) {
       console.error(err);
+      playScanError();
       setLookupError("Erreur lors de la recherche du membre.");
     }
   };
@@ -225,7 +229,7 @@ export default function ScanQR() {
               </div>
             ) : (
               <button
-                onClick={() => setCameraActive(true)}
+                onClick={() => { unlockAudio(); setCameraActive(true); }}
                 className="w-full flex flex-col items-center justify-center gap-3 aspect-square max-w-[280px] mx-auto bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-2xl"
               >
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white dark:bg-gray-800 shadow-sm">

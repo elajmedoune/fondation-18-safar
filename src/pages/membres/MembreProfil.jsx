@@ -128,7 +128,7 @@ export default function MembreProfil() {
     setTelephone(fiche.telephone || '');
     setSexe(fiche.sexe || '');
     setGroupeId(cm?.groupe?.id || '');
-    setFonction(fiche.fonction || '');
+    setFonction(cm?.fonction || '');
   }, [fiche]);
 
   const startEdit = () => {
@@ -139,7 +139,7 @@ export default function MembreProfil() {
     setTelephone(fiche.telephone || '');
     setSexe(fiche.sexe || '');
     setGroupeId(cm?.groupe?.id || '');
-    setFonction(fiche.fonction || '');
+    setFonction(cm?.fonction || '');
     setEditing(true);
     setFeedback(null);
   };
@@ -149,10 +149,11 @@ export default function MembreProfil() {
     setSaving(true);
     setFeedback(null);
     try {
-      await membresService.update(id, { nom, prenom, telephone: telephone || null, sexe: sexe || null, fonction: fonction || null }, { userId: user.id, campagneId: campagneActive.id });
+      await membresService.update(id, { nom, prenom, telephone: telephone || null, sexe: sexe || null }, { userId: user.id, campagneId: campagneActive.id });
       const campagneMembreId = fiche?.campagne_membres?.[0]?.id;
       if (campagneMembreId) {
-        await membresService.updateFicheCampagne(campagneMembreId, { groupe_id: groupeId || null, fonction: null });
+        // La fonction est portée par campagne_membres (ex: "Adjoint président")
+        await membresService.updateFicheCampagne(campagneMembreId, { groupe_id: groupeId || null, fonction: fonction || null });
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['membre-fiche', id, campagneActive?.id] }),
@@ -273,11 +274,6 @@ export default function MembreProfil() {
                 {(!roleBureau && cm?.fonction) && (
                   <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 px-2 py-0.5 text-[10px] font-semibold tracking-wide shrink-0">
                     {cm.fonction}
-                  </span>
-                )}
-                {(!roleBureau && !cm?.fonction && fiche?.fonction) && (
-                  <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 px-2 py-0.5 text-[10px] font-semibold tracking-wide shrink-0">
-                    {fiche.fonction}
                   </span>
                 )}
               </div>

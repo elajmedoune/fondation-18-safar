@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, X, UserPlus, CheckCircle, XCircle, Clock, HelpCircle, FileText, Trash2, Save } from 'lucide-react';
+import { Pencil, X, UserPlus, CheckCircle, XCircle, Clock, HelpCircle, FileText, Trash2, CheckCheck } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -48,16 +48,42 @@ export default function ReunionDetail() {
   const [compteRendu, setCompteRendu] = useState('');
   const [savingCR, setSavingCR] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [addingId, setAddingId] = useState(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerGroupe, setPickerGroupe] = useState('all');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkAdding, setBulkAdding] = useState(false);
 
   const { data: reunion, isLoading } = useQuery({
     queryKey: ['reunion-detail', id],
     queryFn: () => reunionsService.getDetail(id),
     enabled: !!id
   });
+
+  // Liste complète des membres de la campagne (même source que la page Membres,
+  // inclut les membres du bureau sans fiche campagne), chargée à l'ouverture du sélecteur.
+  const { data: fichesCampagne = [], isLoading: loadingMembres } = useQuery({
+    queryKey: ['membres-campagne-roles', campagneActive?.id],
+    queryFn: () => membresService.getByCampagneAvecRoles(campagneActive.id),
+    enabled: showPicker && !!campagneActive?.id
+  });
+
+  const pickerData = useMemo(() => {
+    const existingIds = new Set((reunion?.reunion_participants || []).map((p) => p.membre?.id));
+    const byMembre = new Map();
+    const groupeByMembreId = new Map();
+    (fichesCampagne || []).forEach((f) => {
+      if (!f.membre || existingIds.has(f.membre.id) || byMembre.has(f.membre.id)) return;
+      byMembre.set(f.membre.id, f.membre);
+      if (f.groupe?.id) groupeByMembreId.set(f.membre.id, f.groupe);
+    });
+    const groupes = [];
+    const seenGroupes = new Set();
+    groupeByMembreId.forEach((g) => {
+      if (!seenGroupes.has(g.id)) { seenGroupes.add(g.id); groupes.push(g); }
+    });
+    return { disponibles: [...byMembre.values()], groupes, groupeByMembreId };
+  }, [fichesCampagne, reunion?.reunion_participants]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['reunion-detail', id] });
@@ -103,28 +129,31 @@ export default function ReunionDetail() {
     finally { setSavingCR(false); }
   };
 
-  const handleSearch = async (e) => {
-    const value = e.target.value;
-    setSearchQuery(value);
-    if (value.trim().length < 2) { setSearchResults([]); return; }
-    setSearching(true);
-    try {
-      const results = await membresService.search(value);
-      const existingIds = new Set(reunion?.reunion_participants?.map((p) => p.membre?.id) || []);
-      setSearchResults(results.filter((m) => !existingIds.has(m.id)));
-    } catch (err) { console.error(err); }
-    finally { setSearching(false); }
-  };
+  const toggleSelect = (membreId) => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(membreId)) next.delete(membreId); else next.add(membreId);
+    return next;
+  });
 
-  const handleAddParticipant = async (membreId) => {
-    setAddingId(membreId);
+  const handleBulkAdd = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkAdding(true);
     try {
-      await reunionsService.addParticipant(id, membreId, 'present', user.id, campagneActive?.id);
-      setSearchQuery('');
-      setSearchResults([]);
+      await reunionsService.addParticipantsBulk(id, [...selectedIds], 'present', user.id, campagneActive?.id);
+      setSelectedIds(new Set());
+      setPickerSearch('');
+      setPickerGroupe('all');
+      setShowPicker(false);
       invalidate();
     } catch (err) { alert(err.message); }
-    finally { setAddingId(null); }
+    finally { setBulkAdding(false); }
+  };
+
+  const handleMarkAllPresent = async () => {
+    try {
+      await reunionsService.markAllPresent(id, user.id, campagneActive?.id);
+      invalidate();
+    } catch (err) { alert(err.message); }
   };
 
   const handleUpdateStatut = async (participantId, statut) => {
@@ -151,18 +180,31 @@ export default function ReunionDetail() {
   const retards = participants.filter((p) => p.statut_presence === 'retard');
   const excuses = participants.filter((p) => p.statut_presence === 'excuse');
 
+  const pickerQuery = pickerSearch.trim().toLowerCase();
+  const disponiblesFiltres = pickerData.disponibles.filter((m) => {
+    if (pickerGroupe !== 'all' && pickerData.groupeByMembreId.get(m.id)?.id !== pickerGroupe) return false;
+    if (!pickerQuery) return true;
+    return `${m.prenom} ${m.nom} ${m.numero_membre}`.toLowerCase().includes(pickerQuery);
+  });
+  const allFilteredSelected = disponiblesFiltres.length > 0 && disponiblesFiltres.every((m) => selectedIds.has(m.id));
+  const toggleAllFiltered = () => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    disponiblesFiltres.forEach((m) => (allFilteredSelected ? next.delete(m.id) : next.add(m.id)));
+    return next;
+  });
+
   return (
     <div className="space-y-5 max-w-2xl mx-auto">
       <BackButton to="/reunions" label="Réunions" />
 
       {/* En-tête réunion */}
-      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 shadow-sm">
+      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">{formatDate(reunion.date_reunion)}</h1>
-            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">{formatDate(reunion.date_reunion)}</h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
               {reunion.heure && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatTime(reunion.heure)}</span>}
-              {reunion.lieu && <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {reunion.lieu}</span>}
+              {reunion.lieu && <span className="flex items-center gap-1 min-w-0"><FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{reunion.lieu}</span></span>}
             </div>
           </div>
           {canWrite && !editingInfo && (
@@ -213,14 +255,14 @@ export default function ReunionDetail() {
 
       {/* Statistiques présences */}
       {participants.length > 0 && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
             { label: 'Présents', count: presences.length, cls: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' },
             { label: 'Retards', count: retards.length, cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400' },
             { label: 'Excusés', count: excuses.length, cls: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' },
             { label: 'Absents', count: absents.length, cls: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' }
           ].map((s) => (
-            <div key={s.label} className={`rounded-xl p-3 text-center ${s.cls}`}>
+            <div key={s.label} className={`rounded-xl p-2.5 sm:p-3 text-center ${s.cls}`}>
               <p className="text-lg font-bold">{s.count}</p>
               <p className="text-[10px] font-medium uppercase tracking-wider">{s.label}</p>
             </div>
@@ -229,23 +271,18 @@ export default function ReunionDetail() {
       )}
 
       {/* Participants */}
-      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 shadow-sm space-y-4">
+      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm space-y-4">
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Participants ({participants.length})</h2>
 
         {canWrite && (
-          <div className="relative">
-            <input type="text" value={searchQuery} onChange={handleSearch} placeholder="Ajouter un membre..." className={inputCls} />
-            {searching && <p className="text-xs text-gray-500 mt-1">Recherche...</p>}
-            {searchResults.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-56 overflow-auto">
-                {searchResults.map((m) => (
-                  <li key={m.id}>
-                    <button type="button" onClick={() => handleAddParticipant(m.id)} disabled={addingId === m.id} className="w-full text-left px-3 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm transition-colors disabled:opacity-50">
-                      {m.prenom} {m.nom} <span className="text-gray-500">— {m.numero_membre}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button onClick={() => setShowPicker(true)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-primary-200 dark:border-primary-800/60 bg-primary-50/50 dark:bg-primary-900/10 text-primary-700 dark:text-primary-400 px-3 py-2.5 text-xs font-semibold hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-all">
+              <UserPlus className="h-4 w-4" /> Ajouter des membres
+            </button>
+            {participants.some((p) => p.statut_presence !== 'present') && (
+              <button onClick={handleMarkAllPresent} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10 text-green-700 dark:text-green-400 px-3 py-2.5 text-xs font-semibold hover:bg-green-100 dark:hover:bg-green-900/30 transition-all">
+                <CheckCheck className="h-4 w-4" /> Tout présent
+              </button>
             )}
           </div>
         )}
@@ -258,8 +295,8 @@ export default function ReunionDetail() {
               const statut = STATUT_PRESENCE.find((s) => s.value === p.statut_presence);
               const StatutIcon = statut?.icon || CheckCircle;
               return (
-                <div key={p.id} className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div key={p.id} className="flex items-center justify-between gap-2 py-2 px-2 sm:px-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     {p.membre?.photo_url ? (
                       <img src={p.membre.photo_url} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
                     ) : (
@@ -273,7 +310,7 @@ export default function ReunionDetail() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     {canWrite ? (
                       STATUT_PRESENCE.map((s) => {
                         const SIcon = s.icon;
@@ -308,7 +345,7 @@ export default function ReunionDetail() {
       </div>
 
       {/* Compte rendu */}
-      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 shadow-sm space-y-3">
+      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
             <FileText className="h-4 w-4 text-primary-600" /> Compte rendu
@@ -344,6 +381,100 @@ export default function ReunionDetail() {
           <p className="text-sm text-gray-400 py-4 text-center">Aucun compte rendu pour cette réunion.</p>
         )}
       </div>
+
+      {/* Modale d'ajout en masse des participants */}
+      {showPicker && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowPicker(false)} />
+          <div className="relative w-full max-w-md h-[80vh] max-h-[640px] rounded-3xl border border-gray-200/70 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Ajouter des membres</h2>
+              <button onClick={() => setShowPicker(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="shrink-0 px-5 pb-2">
+              <input type="text" value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Rechercher (nom, n° membre)..." className={inputCls} />
+            </div>
+
+            {pickerData.groupes.length > 0 && (
+              <div className="shrink-0 px-5 pb-2 flex gap-1.5 overflow-x-auto">
+                {[{ id: 'all', nom: 'Tous' }, ...pickerData.groupes].map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setPickerGroupe(g.id)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${pickerGroupe === g.id ? 'bg-primary-700 text-white' : 'border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                  >
+                    {g.nom}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!loadingMembres && disponiblesFiltres.length > 0 && (
+              <label className="shrink-0 mx-5 mb-1 flex items-center gap-2.5 text-xs font-medium text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleAllFiltered}
+                  className="h-4 w-4 rounded accent-primary-700"
+                />
+                Tout sélectionner ({disponiblesFiltres.length})
+              </label>
+            )}
+
+            <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-0.5 min-h-0">
+              {loadingMembres ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-700 border-t-transparent" />
+                </div>
+              ) : disponiblesFiltres.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-10">
+                  {pickerData.disponibles.length === 0 ? 'Tous les membres sont déjà participants.' : 'Aucun membre trouvé.'}
+                </p>
+              ) : (
+                disponiblesFiltres.map((m) => {
+                  const groupe = pickerData.groupeByMembreId.get(m.id);
+                  return (
+                    <label key={m.id} className="flex items-center gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(m.id)}
+                        onChange={() => toggleSelect(m.id)}
+                        className="h-4 w-4 shrink-0 rounded accent-primary-700"
+                      />
+                      {m.photo_url ? (
+                        <img src={m.photo_url} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/40 dark:to-primary-800/40 flex items-center justify-center text-primary-700 dark:text-primary-400 text-xs font-bold shrink-0">
+                          {m.prenom?.[0]}{m.nom?.[0]}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{m.prenom} {m.nom}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          N° {m.numero_membre}{groupe ? ` · ${groupe.nom}` : ''}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-gray-200 dark:border-gray-800 p-4">
+              <button
+                onClick={handleBulkAdd}
+                disabled={selectedIds.size === 0 || bulkAdding}
+                className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all"
+              >
+                {bulkAdding ? 'Ajout...' : selectedIds.size > 0 ? `Ajouter ${selectedIds.size} membre${selectedIds.size > 1 ? 's' : ''} (présent)` : 'Sélectionne des membres'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -93,7 +93,6 @@ export const membresService = {
           (roleBureau && ROLE_LABELS[roleBureau]) ||
           (responsableIds.has(f.membre?.id) ? `Responsable (${f.groupe?.nom || 'groupe'})` : null) ||
           f.fonction ||
-          f.membre?.fonction ||
           null;
         return { ...f, fonctionAffichee, _roleBureau: roleBureau || null };
       });
@@ -164,9 +163,10 @@ export const membresService = {
   },
 
   async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {
+    // NB : "fonction" est portée par campagne_membres (par campagne), pas par membres.
     const { data: membre, error } = await supabase
       .from('membres')
-      .insert({ nom, prenom, telephone: telephone || null, sexe: sexe || null, photo_url: photo_url || null, fonction: fonction || null })
+      .insert({ nom, prenom, telephone: telephone || null, sexe: sexe || null, photo_url: photo_url || null })
       .select()
       .single();
     if (error) throw error;

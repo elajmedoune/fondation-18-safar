@@ -15,6 +15,7 @@ export const NAV_ITEMS = {
     { label: 'Dépenses', to: '/finances/depenses', icon: 'Receipt' },
     { label: 'Objectifs', to: '/finances/objectifs', icon: 'Target' },
     { label: 'Réunions', to: '/reunions', icon: 'Calendar' },
+    { label: 'Rapports', to: '/rapports', icon: 'FileText' },
     { label: 'Assistant IA', to: '/assistant-ia', icon: 'Bot' },
   ],
   [ROLES.SECRETAIRE]: [

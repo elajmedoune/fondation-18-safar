@@ -486,12 +486,38 @@ create policy "presences_groupe_write" on presences_groupe for all to authentica
     or fn_has_role(array['administrateur','secretaire']::role_systeme[], campagne_id)
   );
 
--- RAPPORTS : lecture secrétaire/président/admin, écriture idem
+-- RAPPORTS : lecture bureau (secrétaire/trésorier/président/admin) ;
+-- écriture président/admin (tout), secrétaire (general/activite ou ses rapports),
+-- trésorier (financier ou ses rapports)
 create policy "rapports_select" on rapports for select to authenticated
-  using (fn_has_role(array['secretaire','president','administrateur']::role_systeme[], campagne_id));
+  using (fn_has_role(array['secretaire','tresorier','president','administrateur']::role_systeme[], campagne_id));
 create policy "rapports_write" on rapports for all to authenticated
-  using (fn_has_role(array['secretaire','president','administrateur']::role_systeme[], campagne_id))
-  with check (fn_has_role(array['secretaire','president','administrateur']::role_systeme[], campagne_id));
+  using (
+    fn_has_role(array['president','administrateur']::role_systeme[], campagne_id)
+    or (
+      created_by = auth.uid()
+      and fn_has_role(array['secretaire','tresorier']::role_systeme[], campagne_id)
+    )
+    or (
+      fn_has_role(array['secretaire']::role_systeme[], campagne_id)
+      and coalesce(type, 'general') in ('general','activite')
+    )
+    or (
+      fn_has_role(array['tresorier']::role_systeme[], campagne_id)
+      and type = 'financier'
+    )
+  )
+  with check (
+    fn_has_role(array['president','administrateur']::role_systeme[], campagne_id)
+    or (
+      fn_has_role(array['secretaire']::role_systeme[], campagne_id)
+      and coalesce(type, 'general') in ('general','activite')
+    )
+    or (
+      fn_has_role(array['tresorier']::role_systeme[], campagne_id)
+      and type = 'financier'
+    )
+  );
 
 -- ============================================================================
 -- 13. GARDER LE PROJET SUPABASE ACTIF (anti-inactivité, plan Free)

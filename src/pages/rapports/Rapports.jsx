@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, FileText, Trash2, Pencil, Download, Calendar } from 'lucide-react';
+import { Plus, X, FileText, Trash2, Pencil, Download, Calendar, Lock } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { rapportsService } from '../../services/rapports.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -25,7 +26,26 @@ const textareaCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-w
 export default function Rapports() {
   const { campagneActive } = useCampagneContext();
   const { user } = useAuth();
+  const { hasRole } = useRole();
   const queryClient = useQueryClient();
+
+  // Matrice des droits sur les rapports :
+  // - president / administrateur : tout (création tous types, édition/suppression de tous les rapports)
+  // - secretaire : création types général/activité, édition/suppression de ses propres rapports
+  // - tresorier  : création type financier uniquement, édition/suppression de ses propres rapports
+  const canManageAll = hasRole(['president', 'administrateur']);
+  const isSecretaire = hasRole('secretaire');
+  const isTresorier = hasRole('tresorier');
+  const canCreate = canManageAll || isSecretaire || isTresorier;
+
+  const allowedTypes = useMemo(() => {
+    if (canManageAll) return TYPES_RAPPORT;
+    const keys = new Set();
+    if (isSecretaire) { keys.add('general'); keys.add('activite'); }
+    if (isTresorier) keys.add('financier');
+    return TYPES_RAPPORT.filter((t) => keys.has(t.value));
+  }, [canManageAll, isSecretaire, isTresorier]);
+  const allowedTypeKeys = allowedTypes.map((t) => t.value).join(',');
 
   const [showForm, setShowForm] = usePersistedState('rap-showForm', false);
   const [type, setType] = usePersistedState('rap-type', 'general');
@@ -45,6 +65,14 @@ export default function Rapports() {
     queryFn: () => rapportsService.listByCampagne(campagneActive.id),
     enabled: !!campagneActive?.id
   });
+
+  useEffect(() => {
+    if (!allowedTypes.some((t) => t.value === type)) {
+      setType(allowedTypes[0]?.value || 'general');
+    }
+  }, [allowedTypeKeys, type, allowedTypes, setType]);
+
+  const canTouchRapport = (r) => canManageAll || r.created_by === user.id;
 
   const resetForm = () => { setType('general'); setTitre(''); setContenu(''); setFichierUrl(''); setFeedback(null); };
 
@@ -103,10 +131,12 @@ export default function Rapports() {
         title="Rapports"
         subtitle={`${rapports.length} rapport${rapports.length !== 1 ? 's' : ''}`}
         action={
-          <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
-            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {showForm ? 'Annuler' : 'Nouveau'}
-          </button>
+          canCreate ? (
+            <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
+              {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {showForm ? 'Annuler' : 'Nouveau'}
+            </button>
+          ) : null
         }
       />
 
@@ -115,9 +145,14 @@ export default function Rapports() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Type</label>
-              <select value={type} onChange={(e) => setType(e.target.value)} className={inputCls}>
-                {TYPES_RAPPORT.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <select value={type} onChange={(e) => setType(e.target.value)} disabled={allowedTypes.length === 1} className={`${inputCls} disabled:opacity-60`}>
+                {allowedTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
+              {allowedTypes.length === 1 && (
+                <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
+                  <Lock className="h-3 w-3" /> Type réservé à votre rôle
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Titre *</label>
@@ -181,14 +216,16 @@ export default function Rapports() {
                           <Download className="h-3 w-3" /> Fichier
                         </a>
                       )}
-                      {!isEditing && (
+                      {canTouchRapport(r) && !isEditing && (
                         <button onClick={() => startEdit(r)} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-800 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
                           <Pencil className="h-3 w-3" /> Modifier
                         </button>
                       )}
-                      <button onClick={() => handleDelete(r.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 px-3 py-1.5 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-all">
-                        <Trash2 className="h-3 w-3" /> Supprimer
-                      </button>
+                      {canTouchRapport(r) && (
+                        <button onClick={() => handleDelete(r.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 px-3 py-1.5 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-all">
+                          <Trash2 className="h-3 w-3" /> Supprimer
+                        </button>
+                      )}
                     </div>
 
                     {isEditing ? (

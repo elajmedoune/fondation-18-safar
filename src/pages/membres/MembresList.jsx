@@ -206,7 +206,6 @@ export default function MembresList() {
   if (!campagneActive) return <p className="text-sm text-gray-500">Aucune campagne active.</p>;
 
   const handleExportPDF = async () => {
-    setOpenExport(false);
     const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
       loadLogoBase64(), import('jspdf'), import('jspdf-autotable')
     ]);
@@ -248,7 +247,6 @@ export default function MembresList() {
   };
 
   const handleExportExcel = async () => {
-    setOpenExport(false);
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(filtered.map((f, i) => ({
       '#': i + 1,
@@ -288,7 +286,7 @@ export default function MembresList() {
         title={`Membres — ${campagneActive.annee}`}
         subtitle={`${filtered.length} membre${filtered.length !== 1 ? 's' : ''}${activeFilterCount > 0 ? ` (${activeFilterCount} filtre${activeFilterCount > 1 ? 's' : ''})` : ''}`}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <ExportMenu
               label={<span className="hidden sm:inline">Exporter</span>}
               items={[
@@ -310,7 +308,7 @@ export default function MembresList() {
       />
 
       {showForm && (
-        <form onSubmit={handleCreate} className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 space-y-3 shadow-sm">
+        <form onSubmit={handleCreate} className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 space-y-3 shadow-sm">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input placeholder="Nom" value={mNom} onChange={(e) => setMNom(e.target.value)} required className={inputCls} />
             <input placeholder="Prénom" value={mPrenom} onChange={(e) => setMPrenom(e.target.value)} required className={inputCls} />
@@ -325,14 +323,24 @@ export default function MembresList() {
               {groupes.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
             </select>
             <input placeholder="Fonction (ex: Chef d'équipe, Chauffeur...)" value={mFonction} onChange={(e) => setMFonction(e.target.value)} className={`sm:col-span-2 ${inputCls}`} />
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 min-w-0">
               <label className="text-xs text-gray-500 block mb-1.5">Photo (optionnel)</label>
-              <input type="file" accept="image/*" onChange={(e) => setMPhotoFile(e.target.files?.[0] || null)} className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 dark:file:bg-primary-900/30 dark:file:text-primary-400 hover:file:bg-primary-100" />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setMPhotoFile(e.target.files?.[0] || null)}
+                className="block w-full max-w-full cursor-pointer truncate overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-gray-500 file:mr-3 file:shrink-0 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900/30 dark:file:text-primary-400"
+              />
             </div>
           </div>
-          <button type="submit" disabled={creating} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
-            {creating ? 'Création...' : 'Créer le membre'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button type="submit" disabled={creating} className="flex-1 rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
+              {creating ? 'Création...' : 'Créer le membre'}
+            </button>
+            <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+              Annuler
+            </button>
+          </div>
           {feedback && <p className={`text-sm ${feedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{feedback.message}</p>}
         </form>
       )}

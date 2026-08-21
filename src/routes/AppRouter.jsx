@@ -31,6 +31,7 @@ import AIAssistant from '../pages/ai/AIAssistant.jsx';
 
 const FINANCE_ROLES = ['tresorier', 'president', 'administrateur'];
 const REUNION_WRITE_ROLES = ['secretaire', 'president', 'administrateur'];
+const RAPPORT_ROLES = ['secretaire', 'tresorier', 'president', 'administrateur'];
 
 export default function AppRouter() {
   return (
@@ -73,7 +74,7 @@ export default function AppRouter() {
             <Route path="/finances/objectifs" element={<Objectifs />} />
           </Route>
 
-          <Route element={<RoleRoute allowed={REUNION_WRITE_ROLES} />}>
+          <Route element={<RoleRoute allowed={RAPPORT_ROLES} />}>
             <Route path="/rapports" element={<Rapports />} />
           </Route>
 

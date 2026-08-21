@@ -126,6 +126,42 @@ export const reunionsService = {
     return data;
   },
 
+  // Ajout en masse : une seule requête pour N membres (appel rapide d'une réunion).
+  async addParticipantsBulk(reunionId, membreIds, statutPresence, userId, campagneId) {
+    const rows = membreIds.map((membreId) => ({
+      reunion_id: reunionId,
+      membre_id: membreId,
+      statut_presence: statutPresence || 'present',
+      enregistre_par: userId
+    }));
+    const { data, error } = await supabase
+      .from('reunion_participants')
+      .upsert(rows, { onConflict: 'reunion_id,membre_id' })
+      .select();
+    if (error) throw error;
+    await auditLogsService.log({
+      userId, action: 'reunion_participant.bulk_add', entity: 'reunion_participants',
+      entityId: reunionId, newData: { count: data?.length || rows.length }, campagneId
+    });
+    return data;
+  },
+
+  // Marque tous les participants non présents comme présents (une seule requête).
+  async markAllPresent(reunionId, userId, campagneId) {
+    const { data, error } = await supabase
+      .from('reunion_participants')
+      .update({ statut_presence: 'present' })
+      .eq('reunion_id', reunionId)
+      .neq('statut_presence', 'present')
+      .select();
+    if (error) throw error;
+    await auditLogsService.log({
+      userId, action: 'reunion_participant.bulk_present', entity: 'reunion_participants',
+      entityId: reunionId, newData: { count: data?.length || 0 }, campagneId
+    });
+    return data;
+  },
+
   async updateParticipantStatut(participantId, statutPresence, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {

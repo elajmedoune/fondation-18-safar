@@ -99,7 +99,6 @@ export default function Quetes() {
   };
 
   const handleExportPDF = async () => {
-    setOpenExport(false);
     const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
       loadLogoBase64(), import('jspdf'), import('jspdf-autotable')
     ]);
@@ -135,7 +134,6 @@ export default function Quetes() {
   };
 
   const handleExportExcel = async () => {
-    setOpenExport(false);
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(quetes.map((q, i) => ({
       '#': i + 1,

@@ -16,6 +16,8 @@ const ACTION_LABELS = {
   'reunion_participant.add': 'Participant ajouté',
   'reunion_participant.update': 'Présence modifiée',
   'reunion_participant.remove': 'Participant retiré',
+  'reunion_participant.bulk_add': 'Participants ajoutés à la réunion',
+  'reunion_participant.bulk_present': 'Appel : tous présents',
   'role.assign': 'Rôle attribué',
   'role.update': 'Rôle modifié',
   'role.remove': 'Rôle retiré',
@@ -96,7 +98,6 @@ export const auditLogsService = {
       // Auto-create notifications for bureau members
       try {
         const label = ACTION_LABELS[action] || action;
-        const entityLabel = ENTITY_LABELS[entity] || entity;
         const notifType = action.includes('.delete') ? 'warning' : action.includes('.create') ? 'success' : 'info';
 
         // Get actor name
@@ -118,11 +119,12 @@ export const auditLogsService = {
           else if (entity === 'campagnes' && newData.nom) detail = ` — ${newData.nom}`;
           else if (entity === 'membres' && newData.nom) detail = ` — ${newData.prenom} ${newData.nom}`;
           else if (entity === 'groupes' && newData.nom) detail = ` — ${newData.nom}`;
+          else if (entity === 'reunion_participants' && newData.count) detail = ` — ${newData.count} membre${newData.count > 1 ? 's' : ''}`;
         }
 
         await notificationsService.notifyBureau(campagneId, {
           titre: label,
-          message: `${actorName} a effectué : ${entityLabel}${detail}`,
+          message: `${label} par ${actorName}${detail}`,
           type: notifType,
           entity,
           entityId,

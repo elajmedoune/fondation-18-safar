@@ -138,7 +138,6 @@ export default function Depenses() {
   };
 
   const handleExportPDF = async () => {
-    setOpenExport(false);
     const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
       loadLogoBase64(), import('jspdf'), import('jspdf-autotable')
     ]);
@@ -176,7 +175,6 @@ export default function Depenses() {
   };
 
   const handleExportExcel = async () => {
-    setOpenExport(false);
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(depenses.map((d, i) => ({
       '#': i + 1,
