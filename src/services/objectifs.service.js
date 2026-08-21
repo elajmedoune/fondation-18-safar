@@ -51,19 +51,24 @@ export const objectifsService = {
     return data;
   },
 
-  async update(id, { montantCible }) {
+  async update(id, campagneId, { montantCible }) {
     const { data, error } = await supabase
       .from('objectifs')
       .update({ montant_cible: montantCible })
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .select()
       .single();
     if (error) throw error;
     return data;
   },
 
-  async remove(id) {
-    const { error } = await supabase.from('objectifs').delete().eq('id', id);
+  async remove(id, campagneId) {
+    const { error } = await supabase
+      .from('objectifs')
+      .delete()
+      .eq('id', id)
+      .eq('campagne_id', campagneId);
     if (error) throw error;
   }
 };

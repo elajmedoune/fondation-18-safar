@@ -2,21 +2,19 @@ import { useAuthContext } from '../contexts/AuthContext.jsx';
 import { useCampagneContext } from '../contexts/CampagneContext.jsx';
 import { getRolePrioritaire } from '../constants/roles.js';
 
-/**
- * hasRole('tresorier') -> true si l'utilisateur a ce rôle sur la campagne active
- *                         (ou un rôle global type administrateur/president, campagne_id = null)
- */
+// RÈGLE : tout dépend de la campagne active. SEUL le rôle "administrateur"
+// est global (indépendant de la campagne). Un rôle bureau/responsable rattaché
+// à une autre campagne ne donne AUCUN droit sur la campagne active.
 export function useRole() {
   const { roles } = useAuthContext();
   const { campagneActive } = useCampagneContext();
 
+  const estRoleActif = (r) =>
+    r.role === 'administrateur' || r.campagne_id === campagneActive?.id;
+
   const hasRole = (roleOrRoles) => {
     const wanted = Array.isArray(roleOrRoles) ? roleOrRoles : [roleOrRoles];
-    return roles.some(
-      (r) =>
-        wanted.includes(r.role) &&
-        (r.campagne_id === null || r.campagne_id === campagneActive?.id)
-    );
+    return roles.some((r) => wanted.includes(r.role) && estRoleActif(r));
   };
 
   const isResponsableDe = (groupeId) =>
@@ -24,11 +22,20 @@ export function useRole() {
       (r) =>
         r.role === 'responsable' &&
         r.groupe_id === groupeId &&
-        (r.campagne_id === null || r.campagne_id === campagneActive?.id)
+        r.campagne_id === campagneActive?.id
     );
 
-  const roleNames = roles.map((r) => r.role);
-  const rolePrincipal = getRolePrioritaire(roleNames);
+  // Rôles valides pour la campagne active (admin global inclus)
+  const roleNamesActifs = [
+    ...new Set(roles.filter(estRoleActif).map((r) => r.role)),
+  ];
+  const rolePrincipal = getRolePrioritaire(roleNamesActifs);
 
-  return { hasRole, isResponsableDe, roleNames, rolePrincipal };
+  return {
+    hasRole,
+    isResponsableDe,
+    roleNames: roleNamesActifs,
+    roleNamesActifs,
+    rolePrincipal,
+  };
 }

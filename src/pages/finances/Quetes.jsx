@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, MapPin, Search } from 'lucide-react';
+import { Plus, X, MapPin, Search, Pencil, Trash2 } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -59,6 +59,12 @@ export default function Quetes() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  const [editingId, setEditingId] = useState(null);
+  const [editLieu, setEditLieu] = useState('');
+  const [editMontant, setEditMontant] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const { data: quetes = [], isLoading } = useQuery({
     queryKey: ['quetes', campagneActive?.id],
     queryFn: () => quetesService.listByCampagne(campagneActive.id),
@@ -78,7 +84,7 @@ export default function Quetes() {
     setQuery(value);
     setCollecteurMembre(null);
     if (value.trim().length < 2) { setResultats([]); return; }
-    const res = await membresService.search(value);
+    const res = await membresService.searchInCampagne(campagneActive.id, value);
     setResultats(res);
   };
 
@@ -100,6 +106,29 @@ export default function Quetes() {
       console.error(err);
       setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
     } finally { setSubmitting(false); }
+  };
+
+  const startEdit = (q) => { setEditingId(q.id); setEditLieu(q.lieu); setEditMontant(String(q.montant)); setEditNote(q.note || ''); };
+
+  const handleSaveEdit = async (id) => {
+    if (!editLieu.trim() || editMontant === '' || Number(editMontant) < 0) return;
+    setSavingEdit(true);
+    try {
+      await quetesService.update(id, campagneActive.id, { lieu: editLieu.trim(), montant: Number(editMontant), note: editNote }, { userId: user.id });
+      setEditingId(null);
+      queryClient.invalidateQueries({ queryKey: ['quetes', campagneActive.id] });
+      queryClient.invalidateQueries({ queryKey: ['quetes-total', campagneActive.id] });
+    } catch (err) { alert(err.message); }
+    finally { setSavingEdit(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Supprimer cette quête ?')) return;
+    try {
+      await quetesService.remove(id, campagneActive.id, { userId: user.id });
+      queryClient.invalidateQueries({ queryKey: ['quetes', campagneActive.id] });
+      queryClient.invalidateQueries({ queryKey: ['quetes-total', campagneActive.id] });
+    } catch (err) { alert(err.message); }
   };
 
   const handleExportPDF = async () => {
@@ -236,19 +265,50 @@ export default function Quetes() {
         </div>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/50 rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm overflow-hidden">
-          {quetes.map((q) => (
-            <li key={q.id} className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-3.5 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-              <div className="min-w-0">
-                <p className="font-semibold text-gray-900 dark:text-white truncate">{q.lieu}</p>
-                <p className="text-gray-500 text-xs truncate">
-                  {new Date(q.date_quete).toLocaleDateString('fr-FR')}
-                  {q.collecteur?.membre ? ` · ${q.collecteur.membre.prenom} ${q.collecteur.membre.nom}` : ''}
-                  {q.note ? ` · ${q.note}` : ''}
-                </p>
-              </div>
-              <span className="font-bold text-green-600 shrink-0 whitespace-nowrap">+{formatFCFA(q.montant)}</span>
-            </li>
-          ))}
+          {quetes.map((q) => {
+            const isEditing = editingId === q.id;
+            return (
+              <li key={q.id} className="px-3 sm:px-4 py-3 sm:py-3.5 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input type="text" value={editLieu} onChange={(e) => setEditLieu(e.target.value)} placeholder="Lieu" className={inputCls} />
+                      <input type="number" min="0" value={editMontant} onChange={(e) => setEditMontant(e.target.value)} placeholder="Montant (FCFA)" className={inputCls} />
+                      <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Note (optionnel)" className={inputCls} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleSaveEdit(q.id)} disabled={savingEdit} className="rounded-xl bg-primary-700 text-white px-4 py-1.5 text-xs font-semibold hover:bg-primary-800 disabled:opacity-50 transition-all">
+                        {savingEdit ? '...' : 'Enregistrer'}
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 sm:gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">{q.lieu}</p>
+                      <p className="text-gray-500 text-xs truncate">
+                        {new Date(q.date_quete).toLocaleDateString('fr-FR')}
+                        {q.collecteur?.membre ? ` · ${q.collecteur.membre.prenom} ${q.collecteur.membre.nom}` : ''}
+                        {q.note ? ` · ${q.note}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      <span className="font-bold text-green-600 text-xs sm:text-sm whitespace-nowrap">+{formatFCFA(q.montant)}</span>
+                      {canManage && (
+                        <>
+                          <button onClick={() => startEdit(q)} className="text-gray-300 hover:text-primary-600 dark:text-gray-600 dark:hover:text-primary-400 transition-colors"><Pencil className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(q.id)} className="text-gray-300 hover:text-red-600 dark:text-gray-600 dark:hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

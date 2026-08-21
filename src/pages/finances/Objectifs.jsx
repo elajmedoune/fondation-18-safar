@@ -93,7 +93,7 @@ export default function Objectifs() {
   const handleUpdate = async (id) => {
     if (!editMontant || Number(editMontant) <= 0) return;
     try {
-      await objectifsService.update(id, { montantCible: Number(editMontant) });
+      await objectifsService.update(id, campagneActive.id, { montantCible: Number(editMontant) });
       setEditingId(null);
       setEditMontant('');
       queryClient.invalidateQueries({ queryKey: ['objectifs', campagneActive.id] });
@@ -105,7 +105,7 @@ export default function Objectifs() {
   const handleDelete = async (id) => {
     if (!confirm('Supprimer cet objectif ?')) return;
     try {
-      await objectifsService.remove(id);
+      await objectifsService.remove(id, campagneActive.id);
       queryClient.invalidateQueries({ queryKey: ['objectifs', campagneActive.id] });
     } catch (err) {
       console.error(err);

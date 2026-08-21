@@ -108,7 +108,7 @@ export default function Rapports() {
   const handleSaveEdit = async (id) => {
     setSavingEdit(true);
     try {
-      await rapportsService.update(id, { contenu: editContenu || null });
+      await rapportsService.update(id, campagneActive.id, { contenu: editContenu || null });
       setEditingId(null);
       queryClient.invalidateQueries({ queryKey: ['rapports', campagneActive.id] });
     } catch (err) { alert(err.message); }
@@ -118,7 +118,7 @@ export default function Rapports() {
   const handleDelete = async (id) => {
     if (!confirm('Supprimer ce rapport ?')) return;
     try {
-      await rapportsService.remove(id);
+      await rapportsService.remove(id, campagneActive.id);
       queryClient.invalidateQueries({ queryKey: ['rapports', campagneActive.id] });
     } catch (err) { alert(err.message); }
   };

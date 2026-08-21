@@ -11,11 +11,12 @@ export const rapportsService = {
     return data;
   },
 
-  async get(id) {
+  async get(id, campagneId) {
     const { data, error } = await supabase
       .from('rapports')
       .select('*')
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .single();
     if (error) throw error;
     return data;
@@ -38,7 +39,7 @@ export const rapportsService = {
     return data;
   },
 
-  async update(id, { type, titre, contenu, fichierUrl }) {
+  async update(id, campagneId, { type, titre, contenu, fichierUrl }) {
     const fields = {};
     if (type !== undefined) fields.type = type;
     if (titre !== undefined) fields.titre = titre;
@@ -48,14 +49,19 @@ export const rapportsService = {
       .from('rapports')
       .update(fields)
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .select()
       .single();
     if (error) throw error;
     return data;
   },
 
-  async remove(id) {
-    const { error } = await supabase.from('rapports').delete().eq('id', id);
+  async remove(id, campagneId) {
+    const { error } = await supabase
+      .from('rapports')
+      .delete()
+      .eq('id', id)
+      .eq('campagne_id', campagneId);
     if (error) throw error;
   }
 };

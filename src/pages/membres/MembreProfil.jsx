@@ -83,12 +83,13 @@ export default function MembreProfil() {
   const { data: roleBureau } = useQuery({
     queryKey: ['membre-role', fiche?.user_id, campagneActive?.id],
     queryFn: async () => {
-      if (!fiche?.user_id) return null;
+      if (!fiche?.user_id || !campagneActive?.id) return null;
+      // Bureau = rôle porté par la campagne active ; seul "administrateur" est global.
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', fiche.user_id)
-        .in('role', ['president', 'tresorier', 'secretaire', 'administrateur']);
+        .or(`and(role.in.(president,tresorier,secretaire),campagne_id.eq.${campagneActive.id}),and(role.eq.administrateur,campagne_id.is.null)`);
       if (error) throw error;
       if (!data?.length) return null;
       const PRIORITY = ['administrateur', 'president', 'tresorier', 'secretaire'];
@@ -96,7 +97,7 @@ export default function MembreProfil() {
       const best = PRIORITY.find((r) => data.some((d) => d.role === r));
       return best ? LABELS[best] : null;
     },
-    enabled: !!fiche?.user_id
+    enabled: !!fiche?.user_id && !!campagneActive?.id
   });
 
   const { data: groupes = [] } = useQuery({

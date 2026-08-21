@@ -46,13 +46,14 @@ export const depensesService = {
   async update(id, patch, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('depenses').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('depenses').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
     const { data, error } = await supabase
       .from('depenses')
       .update(patch)
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .select()
       .single();
     if (error) throw error;
@@ -68,10 +69,10 @@ export const depensesService = {
   async remove(id, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('depenses').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('depenses').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
-    const { error } = await supabase.from('depenses').delete().eq('id', id);
+    const { error } = await supabase.from('depenses').delete().eq('id', id).eq('campagne_id', campagneId);
     if (error) throw error;
     if (userId) {
       await auditLogsService.log({

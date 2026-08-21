@@ -119,7 +119,7 @@ export default function ScanQR() {
       const data = await membresService.getFicheByQrCode(qrValue, campagneActive?.id);
       if (!data) {
         playScanError();
-        setLookupError("Aucun membre ne correspond à ce code pour la campagne active.");
+        setLookupError("Aucun membre ne correspond à ce code.");
         return;
       }
       playScanSuccess();

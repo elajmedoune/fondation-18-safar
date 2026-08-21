@@ -12,17 +12,18 @@ export const reunionsService = {
     return data;
   },
 
-  async get(id) {
+  async get(id, campagneId) {
     const { data, error } = await supabase
       .from('reunions')
       .select('*')
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .single();
     if (error) throw error;
     return data;
   },
 
-  async getDetail(id) {
+  async getDetail(id, campagneId) {
     const { data, error } = await supabase
       .from('reunions')
       .select(`
@@ -37,6 +38,7 @@ export const reunionsService = {
         )
       `)
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .single();
     if (error) throw error;
     return data;
@@ -66,7 +68,7 @@ export const reunionsService = {
   async update(id, { dateReunion, heure, lieu, ordreDuJour, compteRendu }, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('reunions').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('reunions').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
     const fields = {};
@@ -79,6 +81,7 @@ export const reunionsService = {
       .from('reunions')
       .update(fields)
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .select()
       .single();
     if (error) throw error;
@@ -94,10 +97,10 @@ export const reunionsService = {
   async remove(id, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('reunions').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('reunions').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
-    const { error } = await supabase.from('reunions').delete().eq('id', id);
+    const { error } = await supabase.from('reunions').delete().eq('id', id).eq('campagne_id', campagneId);
     if (error) throw error;
     if (userId) {
       await auditLogsService.log({
@@ -107,7 +110,20 @@ export const reunionsService = {
     }
   },
 
+  // Garde-fou : la réunion doit appartenir à la campagne active
+  async _assertReunionDansCampagne(reunionId, campagneId) {
+    const { data, error } = await supabase
+      .from('reunions')
+      .select('id')
+      .eq('id', reunionId)
+      .eq('campagne_id', campagneId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Réunion introuvable dans la campagne active.');
+  },
+
   async addParticipant(reunionId, membreId, statutPresence, userId, campagneId) {
+    await this._assertReunionDansCampagne(reunionId, campagneId);
     const { data, error } = await supabase
       .from('reunion_participants')
       .upsert({
@@ -128,6 +144,7 @@ export const reunionsService = {
 
   // Ajout en masse : une seule requête pour N membres (appel rapide d'une réunion).
   async addParticipantsBulk(reunionId, membreIds, statutPresence, userId, campagneId) {
+    await this._assertReunionDansCampagne(reunionId, campagneId);
     const rows = membreIds.map((membreId) => ({
       reunion_id: reunionId,
       membre_id: membreId,
@@ -148,6 +165,7 @@ export const reunionsService = {
 
   // Marque tous les participants non présents comme présents (une seule requête).
   async markAllPresent(reunionId, userId, campagneId) {
+    await this._assertReunionDansCampagne(reunionId, campagneId);
     const { data, error } = await supabase
       .from('reunion_participants')
       .update({ statut_presence: 'present' })
@@ -163,6 +181,9 @@ export const reunionsService = {
   },
 
   async updateParticipantStatut(participantId, statutPresence, { userId, campagneId } = {}) {
+    const { data: part } = await supabase.from('reunion_participants').select('reunion_id').eq('id', participantId).maybeSingle();
+    if (!part) throw new Error('Participant introuvable.');
+    await this._assertReunionDansCampagne(part.reunion_id, campagneId);
     let oldData = null;
     if (userId) {
       const { data: before } = await supabase.from('reunion_participants').select('*').eq('id', participantId).single();
@@ -185,6 +206,9 @@ export const reunionsService = {
   },
 
   async removeParticipant(participantId, { userId, campagneId } = {}) {
+    const { data: part } = await supabase.from('reunion_participants').select('reunion_id').eq('id', participantId).maybeSingle();
+    if (!part) throw new Error('Participant introuvable.');
+    await this._assertReunionDansCampagne(part.reunion_id, campagneId);
     let oldData = null;
     if (userId) {
       const { data: before } = await supabase.from('reunion_participants').select('*').eq('id', participantId).single();

@@ -43,5 +43,51 @@ export const donsService = {
       entityId: data.id, newData: data, campagneId
     });
     return data;
+  },
+
+  // Modification limitée à la campagne active (type / donateur / montant / note).
+  async update(id, campagneId, { type, donateurNom, donateurTelephone, montant, note }, { userId } = {}) {
+    let oldData = null;
+    if (userId) {
+      const { data: before } = await supabase.from('dons').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
+      oldData = before;
+    }
+    const { data, error } = await supabase
+      .from('dons')
+      .update({
+        type,
+        donateur_nom: type === 'anonyme' ? null : (donateurNom || null),
+        donateur_telephone: type === 'anonyme' ? null : (donateurTelephone || null),
+        montant,
+        note: note || null
+      })
+      .eq('id', id)
+      .eq('campagne_id', campagneId)
+      .select()
+      .single();
+    if (error) throw error;
+    if (userId) {
+      await auditLogsService.log({
+        userId, action: 'don.update', entity: 'dons',
+        entityId: id, oldData, newData: data, campagneId
+      });
+    }
+    return data;
+  },
+
+  async remove(id, campagneId, { userId } = {}) {
+    let oldData = null;
+    if (userId) {
+      const { data: before } = await supabase.from('dons').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
+      oldData = before;
+    }
+    const { error } = await supabase.from('dons').delete().eq('id', id).eq('campagne_id', campagneId);
+    if (error) throw error;
+    if (userId) {
+      await auditLogsService.log({
+        userId, action: 'don.delete', entity: 'dons',
+        entityId: id, oldData, campagneId
+      });
+    }
   }
 };

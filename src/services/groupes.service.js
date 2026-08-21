@@ -117,10 +117,12 @@ export const groupesService = {
       const { data: before } = await supabase.from('groupes').select('*').eq('id', id).single();
       oldData = before;
     }
+    // Détacher les membres UNIQUEMENT pour la campagne active
     const { error: detachErr } = await supabase
       .from('campagne_membres')
       .update({ groupe_id: null })
-      .eq('groupe_id', id);
+      .eq('groupe_id', id)
+      .eq('campagne_id', campagneId);
     if (detachErr) throw detachErr;
 
     const { error } = await supabase.from('groupes').delete().eq('id', id);
@@ -134,8 +136,9 @@ export const groupesService = {
   },
 
   // Ajoute un membre existant à ce groupe : met à jour son rattachement à la campagne
-  // s'il en a déjà un, sinon en crée un nouveau (cas d'un membre pas encore dans cette campagne).
+  // s'il en a déjà un, sinon en crée un nouveau. Toujours DANS la campagne donnée.
   async assignMembre(campagneId, groupeId, membreId, userId) {
+    if (!campagneId) throw new Error("Impossible d'ajouter un membre hors campagne.");
     const { data: existing, error: findErr } = await supabase
       .from('campagne_membres')
       .select('id')

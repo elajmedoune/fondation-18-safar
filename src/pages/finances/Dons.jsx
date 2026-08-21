@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Gift, Heart } from 'lucide-react';
+import { Plus, X, Gift, Heart, Pencil, Trash2 } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -56,6 +56,14 @@ export default function Dons() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  const [editingId, setEditingId] = useState(null);
+  const [editType, setEditType] = useState('bienfaiteur');
+  const [editDonateurNom, setEditDonateurNom] = useState('');
+  const [editDonateurTelephone, setEditDonateurTelephone] = useState('');
+  const [editMontant, setEditMontant] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const { data: dons = [], isLoading } = useQuery({
     queryKey: ['dons', campagneActive?.id],
     queryFn: () => donsService.listByCampagne(campagneActive.id),
@@ -85,6 +93,42 @@ export default function Dons() {
       console.error(err);
       setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
     } finally { setSubmitting(false); }
+  };
+
+  const startEdit = (d) => {
+    setEditingId(d.id);
+    setEditType(d.type);
+    setEditDonateurNom(d.donateur_nom || '');
+    setEditDonateurTelephone(d.donateur_telephone || '');
+    setEditMontant(String(d.montant));
+    setEditNote(d.note || '');
+  };
+
+  const handleSaveEdit = async (id) => {
+    if (editMontant === '' || Number(editMontant) <= 0) return;
+    setSavingEdit(true);
+    try {
+      await donsService.update(id, campagneActive.id, {
+        type: editType,
+        donateurNom: editDonateurNom.trim(),
+        donateurTelephone: editDonateurTelephone.trim(),
+        montant: Number(editMontant),
+        note: editNote
+      }, { userId: user.id });
+      setEditingId(null);
+      queryClient.invalidateQueries({ queryKey: ['dons', campagneActive.id] });
+      queryClient.invalidateQueries({ queryKey: ['dons-total', campagneActive.id] });
+    } catch (err) { alert(err.message); }
+    finally { setSavingEdit(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Supprimer ce don ?')) return;
+    try {
+      await donsService.remove(id, campagneActive.id, { userId: user.id });
+      queryClient.invalidateQueries({ queryKey: ['dons', campagneActive.id] });
+      queryClient.invalidateQueries({ queryKey: ['dons-total', campagneActive.id] });
+    } catch (err) { alert(err.message); }
   };
 
   const handleExportPDF = async () => {
@@ -212,15 +256,55 @@ export default function Dons() {
         </div>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/50 rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm overflow-hidden">
-          {dons.map((d) => (
-            <li key={d.id} className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-3.5 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-              <div className="min-w-0">
-                <p className="font-semibold text-gray-900 dark:text-white">{d.type === 'anonyme' ? 'Don anonyme' : (d.donateur_nom || 'Bienfaiteur')}</p>
-                <p className="text-gray-500 text-xs truncate">{new Date(d.date_don).toLocaleDateString('fr-FR')}{d.note ? ` · ${d.note}` : ''}</p>
-              </div>
-              <span className="font-bold text-green-600 shrink-0 whitespace-nowrap">+{formatFCFA(d.montant)}</span>
-            </li>
-          ))}
+          {dons.map((d) => {
+            const isEditing = editingId === d.id;
+            return (
+              <li key={d.id} className="px-3 sm:px-4 py-3 sm:py-3.5 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <select value={editType} onChange={(e) => setEditType(e.target.value)} className={selectCls}>
+                        <option value="bienfaiteur">Bienfaiteur</option>
+                        <option value="anonyme">Anonyme</option>
+                      </select>
+                      <input type="number" min="1" value={editMontant} onChange={(e) => setEditMontant(e.target.value)} placeholder="Montant (FCFA)" className={inputCls} />
+                      <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Note (optionnel)" className={inputCls} />
+                    </div>
+                    {editType === 'bienfaiteur' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input type="text" value={editDonateurNom} onChange={(e) => setEditDonateurNom(e.target.value)} placeholder="Nom du donateur" className={inputCls} />
+                        <input type="tel" value={editDonateurTelephone} onChange={(e) => setEditDonateurTelephone(e.target.value)} placeholder="Telephone" className={inputCls} />
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={() => handleSaveEdit(d.id)} disabled={savingEdit} className="rounded-xl bg-primary-700 text-white px-4 py-1.5 text-xs font-semibold hover:bg-primary-800 disabled:opacity-50 transition-all">
+                        {savingEdit ? '...' : 'Enregistrer'}
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 sm:gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white">{d.type === 'anonyme' ? 'Don anonyme' : (d.donateur_nom || 'Bienfaiteur')}</p>
+                      <p className="text-gray-500 text-xs truncate">{new Date(d.date_don).toLocaleDateString('fr-FR')}{d.note ? ` · ${d.note}` : ''}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      <span className="font-bold text-green-600 text-xs sm:text-sm whitespace-nowrap">+{formatFCFA(d.montant)}</span>
+                      {canManage && (
+                        <>
+                          <button onClick={() => startEdit(d)} className="text-gray-300 hover:text-primary-600 dark:text-gray-600 dark:hover:text-primary-400 transition-colors"><Pencil className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(d.id)} className="text-gray-300 hover:text-red-600 dark:text-gray-600 dark:hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

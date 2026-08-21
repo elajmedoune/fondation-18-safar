@@ -106,7 +106,7 @@ export default function Dashboard() {
 
   const { data: nbMembres } = useQuery({
     queryKey: ['dashboard-membres', campagneActive?.id],
-    queryFn: () => membresService.countMembres(),
+    queryFn: () => membresService.countMembres(campagneActive.id),
     enabled: !!campagneActive
   });
 

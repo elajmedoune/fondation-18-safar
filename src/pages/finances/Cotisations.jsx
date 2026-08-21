@@ -130,7 +130,7 @@ export default function Cotisations() {
     setMembreSelectionne(null);
     if (value.trim().length < 2) { setResultats([]); return; }
     setSearching(true);
-    try { const res = await membresService.search(value); setResultats(res); } catch (err) { console.error(err); } finally { setSearching(false); }
+    try { const res = await membresService.searchInCampagne(ca.id, value); setResultats(res); } catch (err) { console.error(err); } finally { setSearching(false); }
   };
 
   const selectMembre = (m) => { setMembreSelectionne(m); setResultats([]); setQuery(`${m.prenom} ${m.nom} — ${m.numero_membre}`); };

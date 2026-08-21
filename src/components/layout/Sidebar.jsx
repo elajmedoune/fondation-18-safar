@@ -1,12 +1,12 @@
 import { NavLink, Link } from 'react-router-dom';
 import { Landmark } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { getSidebarItems } from '../../constants/navConfig.js';
 import { ICONS } from './icons.js';
 
 export default function Sidebar() {
-  const { roleNames } = useAuth();
-  const items = getSidebarItems(roleNames.length ? roleNames : ['membre']);
+  const { roleNamesActifs } = useRole();
+  const items = getSidebarItems(roleNamesActifs.length ? roleNamesActifs : ['membre']);
 
   return (
     <aside className="hidden md:flex md:flex-col md:w-48 shrink-0 h-full border-r border-gray-200/70 dark:border-gray-800 bg-white/50 dark:bg-gray-950/50">

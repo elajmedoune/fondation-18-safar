@@ -65,6 +65,30 @@ export const campagnesService = {
     return data;
   },
 
+  // Modifier uniquement la date de l'événement d'une campagne
+  // (sans toucher aux autres champs).
+  async updateDate(id, dateEvenement, { userId } = {}) {
+    let oldData = null;
+    if (userId) {
+      const { data: before } = await supabase.from('campagnes').select('*').eq('id', id).single();
+      oldData = before;
+    }
+    const { data, error } = await supabase
+      .from('campagnes')
+      .update({ date_evenement: dateEvenement })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    if (userId) {
+      await auditLogsService.log({
+        userId, action: 'campagne.update_date', entity: 'campagnes',
+        entityId: id, oldData, newData: data, campagneId: id
+      });
+    }
+    return data;
+  },
+
   async activer(id, userId) {
     // Récupérer l'ancien statut
     let oldData = null;

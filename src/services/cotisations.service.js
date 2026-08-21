@@ -55,10 +55,10 @@ export const cotisationsService = {
   },
 
   async update(id, { montant, modePaiement, note, moisCotisation }, { userId, campagneId } = {}) {
-    // Récupérer l'état avant modification
+    // Récupérer l'état avant modification (dans la campagne active uniquement)
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
     const { data, error } = await supabase
@@ -70,6 +70,7 @@ export const cotisationsService = {
         mois_cotisation: moisCotisation || null
       })
       .eq('id', id)
+      .eq('campagne_id', campagneId)
       .select('*, membre:membres(nom, prenom, numero_membre)')
       .single();
     if (error) throw error;
@@ -85,10 +86,10 @@ export const cotisationsService = {
   async remove(id, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
-    const { error } = await supabase.from('cotisations').delete().eq('id', id);
+    const { error } = await supabase.from('cotisations').delete().eq('id', id).eq('campagne_id', campagneId);
     if (error) throw error;
     if (userId) {
       await auditLogsService.log({

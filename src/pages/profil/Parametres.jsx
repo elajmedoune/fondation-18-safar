@@ -1,10 +1,24 @@
 import { useState } from 'react';
-import { Moon, Sun, Lock } from 'lucide-react';
+import { Moon, Sun, Lock, Shield } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext.jsx';
+import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { supabase } from '../../lib/supabaseClient.js';
+
+const ROLE_LABELS = {
+  membre: 'Membre',
+  tresorier: 'Trésorier',
+  secretaire: 'Secrétaire',
+  president: 'Président',
+  administrateur: 'Administrateur'
+};
 
 export default function Parametres() {
   const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const { rolePrincipal } = useRole();
+  const { campagneActive } = useCampagneContext();
   const [newPassword, setNewPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,6 +49,27 @@ export default function Parametres() {
   return (
     <div className="max-w-md mx-auto space-y-6">
       <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Paramètres</h1>
+
+      {/* ── Compte & campagne ── */}
+      <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 space-y-3">
+        <h2 className="text-sm font-medium text-gray-500 flex items-center gap-2"><Shield size={14} /> Compte</h2>
+        <div className="grid grid-cols-3 gap-2 text-sm">
+          <span className="text-gray-500">Email</span>
+          <span className="col-span-2 text-gray-900 dark:text-white truncate">{user?.email}</span>
+          <span className="text-gray-500">Rôle actif</span>
+          <span className="col-span-2 text-gray-900 dark:text-white">{ROLE_LABELS[rolePrincipal] || rolePrincipal}</span>
+          <span className="text-gray-500">Campagne</span>
+          <span className="col-span-2 text-gray-900 dark:text-white">
+            {campagneActive ? `${campagneActive.nom || campagneActive.annee}` : 'Aucune'}
+            {rolePrincipal !== 'administrateur' && campagneActive && (
+              <span className="block text-xs text-gray-400">Vos accès sont rattachés à cette campagne</span>
+            )}
+            {rolePrincipal === 'administrateur' && (
+              <span className="block text-xs text-gray-400">Accès global (indépendant des campagnes)</span>
+            )}
+          </span>
+        </div>
+      </div>
 
       {/* ── Apparence ── */}
       <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 space-y-3">

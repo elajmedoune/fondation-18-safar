@@ -3,17 +3,6 @@ import { fetchAllPages } from '../lib/supabaseFetch.js';
 import { auditLogsService } from './auditLogs.service.js';
 
 export const membresService = {
-  async getByCampagne(campagneId) {
-    // Paginé : pas de limite sur le nombre de fiches renvoyées
-    return fetchAllPages(() =>
-      supabase
-        .from('campagne_membres')
-        .select('*, membre:membres(*), groupe:groupes(*)')
-        .eq('campagne_id', campagneId)
-        .order('membre_id')
-    );
-  },
-
   // IDs des comptes liés à un administrateur GLOBAL (campagne_id = null).
   // Ces comptes techniques ne sont PAS des membres de la fondation.
   async getGlobalAdminUserIds() {
@@ -26,126 +15,122 @@ export const membresService = {
     return new Set((data || []).map((r) => r.user_id));
   },
 
-  // Nombre EXACT de membres : tous les membres de la table "membres"
-  // (simples + bureau) sauf les admins globaux. Comptage côté SQL,
-  // donc juste même au-delà de 1000 lignes.
-  async countMembres() {
-    const excludeIds = [...(await this.getGlobalAdminUserIds())];
-    let q = supabase.from('membres').select('*', { count: 'exact', head: true });
-    if (excludeIds.length > 0) q = q.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
-    const { count, error } = await q;
-    if (error) throw error;
-    return count;
-  },
-
-  // Liste complète et officielle des membres de la fondation :
-  // - TOUS les membres de la table "membres" (simples ET bureau),
-  //   SAUF les comptes liés à un admin global — même définition que le
-  //   Dashboard (countMembres) et l'assistant IA.
-  // - Chaque membre est enrichi de son rattachement campagne (groupe,
-  //   fonction, statut) s'il existe, sinon fiche virtuelle sans groupe.
-  // - Paginé : aucune limite sur le nombre de membres.
-  async getByCampagneAvecRoles(campagneId) {
-    // 1) Rôles bureau pour cette campagne (+ globaux)
-    const { data: roles, error: rolesErr } = await supabase
-      .from('user_roles')
-      .select('user_id, role, campagne_id')
-      .in('role', ['president', 'tresorier', 'secretaire', 'administrateur']);
-    if (rolesErr) throw rolesErr;
-
-    const ROLE_LABELS = { administrateur: 'Administrateur', president: 'Président', tresorier: 'Trésorier', secretaire: 'Secrétaire' };
-    const ROLE_PRIORITY = ['administrateur', 'president', 'tresorier', 'secretaire'];
-
-    // Admins globaux (comptes techniques) → exclus des membres
-    const globalAdminUserIds = new Set(
-      (roles || [])
-        .filter((r) => r.role === 'administrateur' && r.campagne_id === null)
-        .map((r) => r.user_id)
-    );
-
-    // Rôle bureau le plus prioritaire par user_id (hors admins globaux)
-    const roleByUserId = new Map();
-    (roles || [])
-      .filter((r) => !globalAdminUserIds.has(r.user_id) && (r.campagne_id === null || r.campagne_id === campagneId))
-      .forEach((r) => {
-        const current = roleByUserId.get(r.user_id);
-        if (!current || ROLE_PRIORITY.indexOf(r.role) < ROLE_PRIORITY.indexOf(current)) {
-          roleByUserId.set(r.user_id, r.role);
-        }
-      });
-
-    // 2) Fiches campagne + tous les membres (paginés, sans limite)
-    const [fiches, allMembres] = await Promise.all([
+  // Nombre EXACT de membres de la CAMPAGNE : lignes campagne_membres de
+  // cette campagne, hors comptes liés à un admin global (indépendant des
+  // campagnes, il n'est pas un membre).
+  async countMembres(campagneId) {
+    const [rows, adminIds] = await Promise.all([
       fetchAllPages(() =>
         supabase
           .from('campagne_membres')
-          .select('id, campagne_id, membre_id, groupe_id, fonction, statut, groupe:groupes(*)')
+          .select('membre_id, membre:membres!inner(user_id)')
           .eq('campagne_id', campagneId)
-          .order('membre_id')
       ),
-      fetchAllPages(() => supabase.from('membres').select('*').order('nom').order('prenom')),
+      this.getGlobalAdminUserIds(),
     ]);
-    const ficheByMembreId = new Map(fiches.map((f) => [f.membre_id, f]));
+    return rows.filter((r) => !adminIds.has(r.membre?.user_id)).length;
+  },
 
-    // 3) Responsables de groupe
-    const { data: responsables, error: respErr } = await supabase
-      .from('campagne_groupe_responsables')
-      .select('membre_id')
-      .eq('campagne_id', campagneId);
-    if (respErr) throw respErr;
-    const responsableIds = new Set((responsables || []).map((r) => r.membre_id));
+  // Liste complète et officielle des membres de la CAMPAGNE active :
+  // - UNIQUEMENT les membres rattachés à cette campagne (campagne_membres),
+  //   hors comptes liés à un admin global (indépendant des campagnes).
+  // - Chaque fiche est enrichie du rôle bureau (porté par la campagne) et du
+  //   statut de responsable de groupe éventuel.
+  // - Paginé : aucune limite sur le nombre de membres.
+  async getByCampagneAvecRoles(campagneId) {
+    // 1) Rôles bureau pour cette campagne UNIQUEMENT (filtre serveur) +
+    //    admins globaux (campagne_id = null). Seul l'admin est global.
+    const [{ data: bureauRoles, error: rolesErr }, adminIds] = await Promise.all([
+      supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('role', ['president', 'tresorier', 'secretaire'])
+        .eq('campagne_id', campagneId),
+      this.getGlobalAdminUserIds(),
+    ]);
+    if (rolesErr) throw rolesErr;
 
-    // 4) Construire une fiche par membre (hors admins globaux)
-    return allMembres
-      .filter((m) => !globalAdminUserIds.has(m.user_id))
-      .map((m) => {
-        const f = ficheByMembreId.get(m.id);
-        const fiche = {
-          id: f?.id ?? null,
-          campagne_id: campagneId,
-          membre_id: m.id,
-          groupe_id: f?.groupe_id ?? null,
-          fonction: f?.fonction ?? null,
-          statut: f?.statut ?? null,
-          membre: m,
-          groupe: f?.groupe ?? null,
-        };
+    const ROLE_LABELS = { president: 'Président', tresorier: 'Trésorier', secretaire: 'Secrétaire' };
+    const ROLE_PRIORITY = ['president', 'tresorier', 'secretaire'];
+
+    // Rôle bureau le plus prioritaire par user_id (campagne active uniquement)
+    const roleByUserId = new Map();
+    (bureauRoles || []).forEach((r) => {
+      const current = roleByUserId.get(r.user_id);
+      if (!current || ROLE_PRIORITY.indexOf(r.role) < ROLE_PRIORITY.indexOf(current)) {
+        roleByUserId.set(r.user_id, r.role);
+      }
+    });
+
+    // 2) Fiches campagne (avec membre + groupe) + responsables de groupe
+    const [fiches, responsablesRes] = await Promise.all([
+      fetchAllPages(() =>
+        supabase
+          .from('campagne_membres')
+          .select('id, campagne_id, membre_id, fonction, statut, membre:membres(*), groupe:groupes(*)')
+          .eq('campagne_id', campagneId)
+      ),
+      supabase
+        .from('campagne_groupe_responsables')
+        .select('membre_id')
+        .eq('campagne_id', campagneId),
+    ]);
+    if (responsablesRes.error) throw responsablesRes.error;
+    const responsableIds = new Set((responsablesRes.data || []).map((r) => r.membre_id));
+
+    // 3) Construire une fiche par membre de la campagne (hors admins globaux)
+    return fiches
+      .filter((f) => !adminIds.has(f.membre?.user_id))
+      .sort((a, b) =>
+        `${a.membre?.nom || ''}${a.membre?.prenom || ''}`.localeCompare(`${b.membre?.nom || ''}${b.membre?.prenom || ''}`)
+      )
+      .map((f) => {
+        const m = f.membre || {};
         const roleBureau = m.user_id ? roleByUserId.get(m.user_id) : null;
         const fonctionAffichee =
           (roleBureau && ROLE_LABELS[roleBureau]) ||
-          (responsableIds.has(m.id) ? `Responsable (${fiche.groupe?.nom || 'groupe'})` : null) ||
-          fiche.fonction ||
+          (responsableIds.has(m.id) ? `Responsable (${f.groupe?.nom || 'groupe'})` : null) ||
+          f.fonction ||
           null;
-        return { ...fiche, fonctionAffichee, _roleBureau: roleBureau || null };
+        return { ...f, fonctionAffichee, _roleBureau: roleBureau || null };
       });
   },
 
-  async getByQrCode(qrValue) {
-    const { data, error } = await supabase
+  // Utilisé par le scanner : reconnaît TOUS les membres (même définition que la
+  // page Membres), avec ou sans rattachement à la campagne active. La fiche
+  // campagne (groupe/fonction) est optionnelle. Les comptes liés à un admin
+  // global ne sont pas reconnus.
+  async getFicheByQrCode(qrValue, campagneId) {
+    const { data: membre, error } = await supabase
       .from('membres')
       .select('*')
       .eq('qr_code_value', qrValue)
       .maybeSingle();
     if (error) throw error;
-    return data;
-  },
+    if (!membre) return null;
 
-  // Utilisé par le scanner : fiche du membre + son groupe/fonction pour la campagne active.
-  async getFicheByQrCode(qrValue, campagneId) {
-    const { data, error } = await supabase
-      .from('membres')
-      .select('*, campagne_membres!inner(id, fonction, statut, groupe:groupes(*))')
-      .eq('qr_code_value', qrValue)
-      .eq('campagne_membres.campagne_id', campagneId)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
+    const adminIds = await this.getGlobalAdminUserIds();
+    if (membre.user_id && adminIds.has(membre.user_id)) return null;
+
+    let fiche = null;
+    if (campagneId) {
+      const { data } = await supabase
+        .from('campagne_membres')
+        .select('id, fonction, statut, groupe:groupes(*)')
+        .eq('membre_id', membre.id)
+        .eq('campagne_id', campagneId)
+        .maybeSingle();
+      fiche = data || null;
+    }
+
+    return { ...membre, campagne_membres: fiche ? [fiche] : [] };
   },
 
   async getFicheMembre(membreId, campagneId) {
+    // "!inner" : un membre sans fiche dans cette campagne est considéré introuvable
     const { data, error } = await supabase
       .from('membres')
-      .select('*, campagne_membres(id, fonction, statut, groupe:groupes(*))')
+      .select('*, campagne_membres!inner(id, campagne_id, fonction, statut, groupe:groupes(*))')
       .eq('id', membreId)
       .eq('campagne_membres.campagne_id', campagneId)
       .maybeSingle();
@@ -172,23 +157,43 @@ export const membresService = {
     return data;
   },
 
-  async searchForGroupe(campagneId, query, limit = 10) {
-    if (!query || query.trim().length < 2) return [];
+  // Recherche limitée aux membres rattachés à la campagne active
+  // (utilisée par les collecteurs cotisations / quêtes).
+  // NB : "!inner" est indispensable pour que le filtre sur campagne_membres
+  // exclue réellement les membres sans fiche dans cette campagne.
+  async searchInCampagne(campagneId, query, limit = 8) {
+    if (!campagneId || !query || query.trim().length < 2) return [];
     const q = query.trim();
-    // Exclure les comptes liés à un admin global : ils ne font pas partie des membres
-    const excludeIds = [...(await this.getGlobalAdminUserIds())];
-    let req = supabase
+    const { data, error } = await supabase
       .from('membres')
-      .select('id, nom, prenom, numero_membre, telephone')
-      .or(`nom.ilike.%${q}%,prenom.ilike.%${q}%,numero_membre.ilike.%${q}%,telephone.ilike.%${q}%`)
+      .select('id, nom, prenom, numero_membre, telephone, photo_url, campagne_membres!inner(fonction, statut)')
+      .eq('campagne_membres.campagne_id', campagneId)
+      .or(`numero_membre.ilike.%${q}%,nom.ilike.%${q}%,prenom.ilike.%${q}%,telephone.ilike.%${q}%`)
+      .order('nom')
       .limit(limit);
-    if (excludeIds.length > 0) req = req.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
-    const { data: membres, error: mErr } = await req;
-    if (mErr) throw mErr;
-    return membres || [];
+    if (error) throw error;
+    return data;
+  },
+
+  // Recherche pour ajouter un membre à un groupe : UNIQUEMENT les membres
+  // rattachés à la campagne active.
+  async searchForGroupe(campagneId, query, limit = 10) {
+    if (!campagneId || !query || query.trim().length < 2) return [];
+    const q = query.trim();
+    const { data, error } = await supabase
+      .from('membres')
+      .select('id, nom, prenom, numero_membre, telephone, campagne_membres!inner(fonction)')
+      .eq('campagne_membres.campagne_id', campagneId)
+      .or(`nom.ilike.%${q}%,prenom.ilike.%${q}%,numero_membre.ilike.%${q}%,telephone.ilike.%${q}%`)
+      .order('nom')
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
   },
 
   async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {
+    // Un membre est TOUJOURS créé DANS une campagne : pas de campagne = refus.
+    if (!campagneId) throw new Error("Impossible de créer un membre hors campagne. Sélectionnez d'abord une campagne active.");
     // NB : "fonction" est portée par campagne_membres (par campagne), pas par membres.
     const { data: membre, error } = await supabase
       .from('membres')
@@ -203,7 +208,11 @@ export const membresService = {
       groupe_id: groupeId,
       fonction: fonction || null
     });
-    if (cmErr) throw cmErr;
+    if (cmErr) {
+      // Ne jamais laisser un membre orphelin sans fiche campagne
+      await supabase.from('membres').delete().eq('id', membre.id);
+      throw cmErr;
+    }
 
     if (userId) {
       await auditLogsService.log({
@@ -221,12 +230,6 @@ export const membresService = {
     if (error) throw error;
     const { data } = supabase.storage.from('membres-photos').getPublicUrl(path);
     return data.publicUrl;
-  },
-
-  async create(membre) {
-    const { data, error } = await supabase.from('membres').insert(membre).select().single();
-    if (error) throw error;
-    return data;
   },
 
   async update(id, patch, { userId, campagneId } = {}) {

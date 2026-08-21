@@ -46,8 +46,12 @@ export const presencesService = {
     return data;
   },
 
-  async remove(id) {
-    const { error } = await supabase.from('presences_groupe').delete().eq('id', id);
+  async remove(id, campagneId) {
+    const { error } = await supabase
+      .from('presences_groupe')
+      .delete()
+      .eq('id', id)
+      .eq('campagne_id', campagneId);
     if (error) throw error;
   }
 };

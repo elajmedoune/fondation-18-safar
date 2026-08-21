@@ -56,12 +56,12 @@ export default function ReunionDetail() {
 
   const { data: reunion, isLoading } = useQuery({
     queryKey: ['reunion-detail', id],
-    queryFn: () => reunionsService.getDetail(id),
-    enabled: !!id
+    queryFn: () => reunionsService.getDetail(id, campagneActive?.id),
+    enabled: !!id && !!campagneActive?.id
   });
 
-  // Liste complète des membres de la campagne (même source que la page Membres,
-  // inclut les membres du bureau sans fiche campagne), chargée à l'ouverture du sélecteur.
+  // Liste des membres de la campagne active (même source que la page Membres),
+  // chargée à l'ouverture du sélecteur.
   const { data: fichesCampagne = [], isLoading: loadingMembres } = useQuery({
     queryKey: ['membres-campagne-roles', campagneActive?.id],
     queryFn: () => membresService.getByCampagneAvecRoles(campagneActive.id),
@@ -158,7 +158,7 @@ export default function ReunionDetail() {
 
   const handleUpdateStatut = async (participantId, statut) => {
     try {
-      await reunionsService.updateParticipantStatut(participantId, statut);
+      await reunionsService.updateParticipantStatut(participantId, statut, { userId: user.id, campagneId: campagneActive?.id });
       invalidate();
     } catch (err) { alert(err.message); }
   };

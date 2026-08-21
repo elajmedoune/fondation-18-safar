@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Camera, Pencil } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
-import { useRole } from '../../hooks/useRole.js';
+import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { membresService } from '../../services/membres.service.js';
 
 const ROLE_LABELS = {
@@ -16,9 +16,25 @@ const ROLE_LABELS = {
 const inputCls = "w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm";
 
 export default function MonProfil() {
-  const { user, membre } = useAuth();
-  const { roleNames } = useRole();
+  const { user, membre, roles } = useAuth();
+  const { campagneActive } = useCampagneContext();
   const queryClient = useQueryClient();
+
+  // Rôles affichés : administrateur (global) + rôles de la campagne active
+  // uniquement. Les rôles des autres campagnes ne sont pas montrés.
+  const rolesAffiches = Object.values(
+    (roles || [])
+      .filter((r) => r.role === 'administrateur' || r.campagne_id === campagneActive?.id)
+      .reduce((acc, r) => {
+        const label = ROLE_LABELS[r.role] || r.role;
+        const scope = r.role === 'administrateur'
+          ? 'Global'
+          : String(campagneActive?.nom || campagneActive?.annee || 'Campagne active');
+        const key = `${label}-${scope}`;
+        if (!acc[key]) acc[key] = { label, scope };
+        return acc;
+      }, {})
+  );
 
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -121,9 +137,10 @@ export default function MonProfil() {
         )}
 
         <div className="flex flex-wrap justify-center gap-1.5">
-          {roleNames.map((r) => (
-            <span key={r} className="text-xs font-medium px-2.5 py-1 rounded-full bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
-              {ROLE_LABELS[r] || r}
+          {rolesAffiches.map(({ label, scope }) => (
+            <span key={`${label}-${scope}`} className="text-xs font-medium px-2.5 py-1 rounded-full bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
+              {label}
+              {scope && <span className="ml-1 opacity-70">· {scope}</span>}
             </span>
           ))}
         </div>

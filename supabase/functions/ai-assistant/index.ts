@@ -61,43 +61,38 @@ async function getGlobalAdminUserIds(supabaseAdmin: any): Promise<Set<string>> {
 //  - Chaque membre est enrichi de son rattachement campagne (groupe/fonction)
 //    s'il existe ; sinon fiche virtuelle sans groupe.
 //  - Paginé : aucune limite sur le nombre de membres.
+// Roster officiel = membres rattachés à la CAMPAGNE active (campagne_membres),
+// même définition que la page Membres et le Dashboard :
+//  - UNIQUEMENT les membres ayant une fiche pour cette campagne (simples ET
+//    bureau). Le total correspond EXACTEMENT au chiffre affiché dans l'app.
+//  - SAUF les comptes liés à un administrateur GLOBAL (campagne_id = null) :
+//    il est indépendant des campagnes et ne fait PAS partie des membres.
+//  - Paginé : aucune limite sur le nombre de membres.
 async function getRosterCampagne(supabaseAdmin: any, campagneId: string): Promise<any[]> {
   const adminIds = await getGlobalAdminUserIds(supabaseAdmin);
 
-  const [fiches, membres] = await Promise.all([
-    fetchAll(() =>
-      supabaseAdmin
-        .from("campagne_membres")
-        .select("id, membre_id, fonction, statut, groupe:groupes(nom)")
-        .eq("campagne_id", campagneId)
-        .order("membre_id")
-    ),
-    fetchAll(() =>
-      supabaseAdmin
-        .from("membres")
-        .select("id,nom,prenom,sexe,telephone,numero_membre,user_id")
-        .order("nom")
-        .order("prenom")
-    ),
-  ]);
+  const fiches = await fetchAll(() =>
+    supabaseAdmin
+      .from("campagne_membres")
+      .select(
+        "id, membre_id, fonction, statut, membre:membres(id,nom,prenom,sexe,telephone,numero_membre,user_id), groupe:groupes(nom)"
+      )
+      .eq("campagne_id", campagneId)
+      .order("membre_id")
+  );
 
-  const ficheByMembreId = new Map(fiches.map((f: any) => [f.membre_id, f]));
-
-  return membres
-    .filter((m: any) => !adminIds.has(m.user_id))
-    .map((m: any) => {
-      const f = ficheByMembreId.get(m.id);
-      return {
-        id: f?.id ?? null,
-        campagne_id: campagneId,
-        membre_id: m.id,
-        groupe_id: null,
-        fonction: f?.fonction ?? null,
-        statut: f?.statut ?? null,
-        membre: m,
-        groupe: f?.groupe ?? null,
-      };
-    });
+  return fiches
+    .filter((f: any) => !adminIds.has(f.membre?.user_id))
+    .map((f: any) => ({
+      id: f.id,
+      campagne_id: campagneId,
+      membre_id: f.membre_id,
+      groupe_id: null,
+      fonction: f.fonction ?? null,
+      statut: f.statut ?? null,
+      membre: f.membre,
+      groupe: f.groupe ?? null,
+    }));
 }
 
 // Présences par réunion (présents/absents) — nécessaires pour rédiger
@@ -167,10 +162,12 @@ Deno.serve(async (req) => {
       .select("role, campagne_id")
       .eq("user_id", user.id);
 
+    // RÈGLE : tout dépend de la campagne. SEUL l'administrateur est global.
+    // Un rôle bureau d'une autre campagne ne donne aucun accès ici.
     const isAdmin = roles?.some((r: any) => r.role === "administrateur");
-    const isPresident = roles?.some((r: any) => r.role === "president");
-    const isTresorier = roles?.some((r: any) => r.role === "tresorier");
-    const isSecretaire = roles?.some((r: any) => r.role === "secretaire");
+    const isPresident = roles?.some((r: any) => r.role === "president" && r.campagne_id === campagneId);
+    const isTresorier = roles?.some((r: any) => r.role === "tresorier" && r.campagne_id === campagneId);
+    const isSecretaire = roles?.some((r: any) => r.role === "secretaire" && r.campagne_id === campagneId);
 
     const { data: membre } = await supabaseAdmin
       .from("membres")
@@ -276,8 +273,8 @@ CHIFFRES:
 - Dons: ${tdon}FCFA (${dons.length} ops)
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres de la fondation: ${membres.length}
-- NOTE: Ce total est la liste officielle et complète des membres (membres simples ET membres du bureau). Les administrateurs sont des comptes techniques et ne font PAS partie des membres.
+- NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE = page Membres + Dashboard): ${membres.length}
+- NOTE: Il n'existe qu'UN SEUL chiffre de membres : les membres rattachés à la campagne active (simples ET bureau), avec ou sans groupe. L'administrateur est indépendant des campagnes et ne fait PAS partie des membres. Toute autre décomposition ("membres actifs", "membres de base", "membres hors campagne"...) est INTERDITE.
 
 DÉPENSES PAR CATÉGORIE:
 ${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
@@ -286,6 +283,7 @@ COTISATIONS PAR MOIS:
 ${Object.entries(cotisationsByMois).map(([mois, v]) => `- ${mois}: ${v.total}FCFA (${v.count} ops)`).join("\n") || "Aucune"}
 
 MEMBRES PAR GROUPE (les membres du bureau sont indiqués entre crochets - ils font partie des membres):
+TOTAL TOUS GROUPES CONFONDUS: ${membres.length} membre(s)
 ${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}): ${ms.join(", ")}`).join("\n") || "Aucun"}
 
 MEMBRES AYANT COTISÉ (${membresAyantCotise.size}):
@@ -351,7 +349,7 @@ CHIFFRES:
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${tc + tdon + tq - td}FCFA
 - Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres de la fondation: ${membres.length}
+- NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
 - Réunions: ${reunions.length} (${reunionsAvecCR} avec CR)
 
 OBJECTIFS: ${objectifsText || "Aucun"}`;
@@ -369,6 +367,7 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
           fetchAll(() => supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId).order("created_at")),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
         ]);
+        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
         const campagne = campagneRes.data;
 
         const tc = cotisations.reduce((s: number, c: any) => s + Number(c.montant), 0);
@@ -395,6 +394,7 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
         contextData = `[TRÉSORIER - FINANCES] Campagne: ${campagne?.nom || ""} | Objectif: ${objectif}FCFA
 
 CHIFFRES:
+- NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
 - Cotisations: ${tc}FCFA (${cotisations.length} ops)
 - Dépenses: ${td}FCFA (${depenses.length} ops)
 - Dons: ${tdon}FCFA (${dons.length} ops)
@@ -460,7 +460,7 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
 
         contextData = `[SECRÉTAIRE - RÉUNIONS & MEMBRES] Campagne: ${campagne?.nom || ""}
 
-MEMBRES (${membres.length}) - liste officielle complète : membres simples ET membres du bureau (les administrateurs n'en font pas partie):
+MEMBRES — NOMBRE TOTAL OFFICIEL: ${membres.length} (chiffre unique : membres simples ET membres du bureau, avec ou sans groupe ; les administrateurs n'en font pas partie):
 ${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):\n  ${ms.join("\n  ")}`).join("\n") || "Aucun membre"}
 
 RÉUNIONS (${reunionsData.length}):
@@ -481,7 +481,7 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
 
         contextData = `[MEMBRE] Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""})
 Objectif: ${campagne?.objectif_global || 0}FCFA
-Membres de la fondation: ${membres.length}
+NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
 Statut: ${campagne?.statut || ""}`;
       }
     } else {
@@ -512,10 +512,11 @@ Tu peux:
 - Suggérer des actions concrètes
 - Analyser les tendances et identifier les problèmes
 
-IMPORTANT - RÔLES ET MEMBRES:
-- Le nombre officiel de membres est celui indiqué dans "Membres de la fondation" du contexte. Utilise TOUJOURS ce chiffre, il est EXACT et complet (aucune limite, liste exhaustive).
-- TOUS les membres font partie du total : les membres simples ET les membres du bureau (président, trésorier, secrétaire, responsables). Le bureau n'est pas compté à part.
-- Les administrateurs NE font PAS partie des membres de la fondation. Ce sont des comptes techniques avec accès complet, pas des membres actifs. Ne les compte JAMAIS et ne les cite JAMAIS comme membres.
+IMPORTANT - NOMBRE DE MEMBRES (RÈGLE ABSOLUE):
+- Le contexte contient UN SEUL chiffre officiel : "NOMBRE TOTAL DE MEMBRES". C'est le nombre EXACT des membres rattachés à la campagne active, identique à celui affiché sur la page Membres et le Dashboard de l'application.
+- Ce total inclut TOUS les membres de la campagne sans exception : les membres simples, les membres du bureau (président, trésorier, secrétaire, responsables) — qu'ils aient ou non un groupe.
+- SEULE exception : l'administrateur. Il est indépendant des campagnes ; il ne compte PAS parmi les membres et ne doit JAMAIS être cité comme membre.
+- Il n'existe AUCUNE autre définition : n'invente JAMAIS de catégories comme "membres actifs", "membres de base", "membres hors campagne", "membres du bureau comptés à part". Si on te demande le nombre de membres (total, actifs, inscrits...), réponds toujours EXACTEMENT le chiffre officiel du contexte, sans le nuancer, le diviser ni le contredire.
 
 TÂCHES DE RÉDACTION — RAPPORTS ET COMPTES RENDUS (très important):
 Quand on te demande un rapport, une synthèse officielle ou un compte rendu, produis un document STRUCTURÉ, COMPLET et prêt à copier dans l'application. Suis EXACTEMENT ces modèles:

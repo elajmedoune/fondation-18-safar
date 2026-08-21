@@ -80,13 +80,14 @@ export const notificationsService = {
     if (error) console.error('[notif] removeAll error:', error);
   },
 
-  // Helper : notifier tous les membres du bureau pour une campagne
+  // Helper : notifier le bureau de la campagne active (+ admins globaux).
+  // Règle : seul "administrateur" est global ; les autres rôles du bureau
+  // ne valent que pour leur campagne.
   async notifyBureau(campagneId, { titre, message, type = 'info', entity = null, entityId = null }) {
     const { data: roles } = await supabase
       .from('user_roles')
       .select('user_id')
-      .in('role', ['president', 'tresorier', 'secretaire', 'administrateur'])
-      .or(`campagne_id.eq.${campagneId},campagne_id.is.null`);
+      .or(`and(role.in.(president,tresorier,secretaire),campagne_id.eq.${campagneId}),and(role.eq.administrateur,campagne_id.is.null)`);
 
     if (!roles || roles.length === 0) return;
     const uniqueUserIds = [...new Set(roles.map((r) => r.user_id))];

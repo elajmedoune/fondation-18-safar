@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, CalendarRange, CheckCircle, Clock, Archive } from 'lucide-react';
+import { Plus, X, CalendarRange, CheckCircle, Clock, Archive, Pencil } from 'lucide-react';
 import { campagnesService } from '../../services/campagnes.service.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 
 const inputCls = "rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 w-full";
 
@@ -21,6 +22,11 @@ export default function CampagnesList() {
   const queryClient = useQueryClient();
   const { setCampagneActive } = useCampagneContext();
   const { user } = useAuth();
+  const { hasRole } = useRole();
+
+  // Création / activation / clôture réservées à l'admin et au président
+  // (les autres rôles n'ont pas les droits RLS : on masque les actions).
+  const peutGerer = hasRole(['administrateur', 'president']);
 
   const [showForm, setShowForm] = useState(false);
   const [annee, setAnnee] = useState('');
@@ -31,6 +37,9 @@ export default function CampagnesList() {
   const [creating, setCreating] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [editingDateId, setEditingDateId] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
 
   const { data: campagnes = [], isLoading } = useQuery({
     queryKey: ['campagnes'],
@@ -61,6 +70,18 @@ export default function CampagnesList() {
     } finally { setCreating(false); }
   };
 
+  const handleSaveDate = async (campagne) => {
+    if (!editDate) return;
+    setSavingDate(true);
+    try {
+      const updated = await campagnesService.updateDate(campagne.id, editDate, { userId: user.id });
+      // Garder le contexte à jour si c'est la campagne active
+      if (updated.statut === 'active') setCampagneActive(updated);
+      setEditingDateId(null);
+      refresh();
+    } catch (err) { alert(err.message); } finally { setSavingDate(false); }
+  };
+
   const handleActiver = async (campagne) => {
     setBusyId(campagne.id);
     try { const updated = await campagnesService.activer(campagne.id, user.id); setCampagneActive(updated); refresh(); }
@@ -70,7 +91,15 @@ export default function CampagnesList() {
   const handleCloturer = async (campagne) => {
     if (!confirm(`Clôturer la campagne ${campagne.nom} ?`)) return;
     setBusyId(campagne.id);
-    try { await campagnesService.cloturer(campagne.id, user.id); refresh(); }
+    try {
+      await campagnesService.cloturer(campagne.id, user.id);
+      // Si on clôture la campagne active, basculer le contexte sur une autre
+      // campagne (active sinon la plus récente) pour ne pas mélanger les données.
+      const liste = await campagnesService.list();
+      const next = liste.find((c) => c.statut === 'active') || liste[0] || null;
+      setCampagneActive(next);
+      refresh();
+    }
     catch (err) { alert(err.message); } finally { setBusyId(null); }
   };
 
@@ -78,10 +107,12 @@ export default function CampagnesList() {
     <div className="space-y-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Campagnes annuelles</h1>
-        <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 text-white px-3 py-2 text-sm font-medium hover:bg-primary-800">
-          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {showForm ? 'Annuler' : 'Nouvelle campagne'}
-        </button>
+        {peutGerer && (
+          <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 text-white px-3 py-2 text-sm font-medium hover:bg-primary-800">
+            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showForm ? 'Annuler' : 'Nouvelle campagne'}
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -130,7 +161,26 @@ export default function CampagnesList() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">{c.nom}</p>
-                    <p className="text-gray-500 text-xs">Année {c.annee} · Événement le {new Date(c.date_evenement).toLocaleDateString('fr-FR')}</p>
+                    {editingDateId === c.id ? (
+                      <div className="flex items-center gap-2 mt-1">
+                        <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className={`${inputCls} !w-auto text-xs`} autoFocus />
+                        <button onClick={() => handleSaveDate(c)} disabled={savingDate || !editDate} className="text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 disabled:opacity-50">
+                          {savingDate ? '...' : 'OK'}
+                        </button>
+                        <button onClick={() => setEditingDateId(null)} className="text-xs rounded-lg border border-gray-200 dark:border-gray-800 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800">
+                          Annuler
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-xs flex items-center gap-1.5">
+                        Année {c.annee} · Événement le {new Date(c.date_evenement).toLocaleDateString('fr-FR')}
+                        {peutGerer && (
+                          <button onClick={() => { setEditingDateId(c.id); setEditDate(c.date_evenement?.slice(0, 10) || ''); }} title="Modifier la date" className="text-gray-300 hover:text-primary-600 dark:text-gray-600 dark:hover:text-primary-400 transition-colors">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <span className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${statut.cls}`}>
                     <StatusIcon className="h-3 w-3" /> {statut.label}
@@ -142,18 +192,20 @@ export default function CampagnesList() {
                   <span>Femme : <span className="font-medium text-gray-700 dark:text-gray-300">{formatFCFA(c.cotisation_femme)}</span></span>
                 </div>
 
-                <div className="flex gap-2 pt-1">
-                  {!isActive && (
-                    <button onClick={() => handleActiver(c)} disabled={busyId === c.id} className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 disabled:opacity-50">
-                      <CheckCircle className="h-3 w-3" /> Activer
-                    </button>
-                  )}
-                  {isActive && (
-                    <button onClick={() => handleCloturer(c)} disabled={busyId === c.id} className="inline-flex items-center gap-1 text-xs rounded-lg border border-red-300 dark:border-red-800 text-red-600 px-3 py-1.5 font-medium hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50">
-                      <Archive className="h-3 w-3" /> Clôturer
-                    </button>
-                  )}
-                </div>
+                {peutGerer && (
+                  <div className="flex gap-2 pt-1">
+                    {!isActive && (
+                      <button onClick={() => handleActiver(c)} disabled={busyId === c.id} className="inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 disabled:opacity-50">
+                        <CheckCircle className="h-3 w-3" /> Activer
+                      </button>
+                    )}
+                    {isActive && (
+                      <button onClick={() => handleCloturer(c)} disabled={busyId === c.id} className="inline-flex items-center gap-1 text-xs rounded-lg border border-red-300 dark:border-red-800 text-red-600 px-3 py-1.5 font-medium hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50">
+                        <Archive className="h-3 w-3" /> Clôturer
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
