@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X, MapPin, Search } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { collecteursService } from '../../services/collecteurs.service.js';
 import { quetesService } from '../../services/quetes.service.js';
@@ -42,6 +43,9 @@ const inputCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-whit
 export default function Quetes() {
   const { campagneActive } = useCampagneContext();
   const { user } = useAuth();
+  const { hasRole } = useRole();
+  // Consultation + export pour tous ; saisie réservée au trésorier et à l'admin
+  const canManage = hasRole(['tresorier', 'administrateur']);
   const queryClient = useQueryClient();
 
   const [showForm, setShowForm] = usePersistedState('qt-showForm', false);
@@ -166,10 +170,12 @@ export default function Quetes() {
                 { label: 'Excel', onClick: handleExportExcel }
               ]}
             />
-            <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
-              {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouvelle'}</span>
-            </button>
+            {canManage && (
+              <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
+                {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouvelle'}</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -187,7 +193,7 @@ export default function Quetes() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && canManage && (
         <form onSubmit={handleSubmit} className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 space-y-3 shadow-sm">
           <div className="relative">
             <label className="text-xs text-gray-500 font-medium">Collecteur (membre)</label>

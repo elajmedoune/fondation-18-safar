@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X, Gift, Heart } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { donsService } from '../../services/dons.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -41,6 +42,9 @@ const selectCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-whi
 export default function Dons() {
   const { campagneActive } = useCampagneContext();
   const { user } = useAuth();
+  const { hasRole } = useRole();
+  // Consultation + export pour tous ; saisie réservée au trésorier et à l'admin
+  const canManage = hasRole(['tresorier', 'administrateur']);
   const queryClient = useQueryClient();
 
   const [showForm, setShowForm] = usePersistedState('dons-showForm', false);
@@ -151,10 +155,12 @@ export default function Dons() {
                 { label: 'Excel', onClick: handleExportExcel }
               ]}
             />
-            <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
-              {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouveau'}</span>
-            </button>
+            {canManage && (
+              <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
+                {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                <span className="hidden sm:inline">{showForm ? 'Annuler' : 'Nouveau'}</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -172,7 +178,7 @@ export default function Dons() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && canManage && (
         <form onSubmit={handleSubmit} className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 sm:p-5 space-y-3 shadow-sm">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <select value={type} onChange={(e) => setType(e.target.value)} className={selectCls}>

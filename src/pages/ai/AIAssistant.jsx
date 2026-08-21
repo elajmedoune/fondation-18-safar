@@ -154,28 +154,28 @@ function renderInline(text) {
 
 const ROLE_SUGGESTIONS = {
   tresorier: [
-    'Résumé des cotisations de la campagne',
+    'Génère le rapport financier de la campagne',
     'Quels membres n\'ont pas encore cotisé ?',
-    'Comparaison dépenses vs recettes',
     'Liste des dépenses par catégorie',
+    'Analyse des recettes vs objectif',
   ],
   secretaire: [
+    'Rédige le compte rendu de la dernière réunion',
+    'Propose un compte rendu pour la prochaine réunion à partir de son ordre du jour',
     'Liste des membres par groupe',
-    'Résumé des réunions récentes',
-    'Combien de membres avons-nous ?',
-    'Dernières activités enregistrées',
+    'Génère un rapport d\'activité des réunions',
   ],
   president: [
-    'Tableau de bord complet de la campagne',
+    'Génère un rapport général de la campagne',
     'État des finances global',
     'Résumé de l\'activité récente',
     'Alertes et points d\'attention',
   ],
   administrateur: [
-    'Vue complète de la campagne',
-    'Tous les derniers ajouts',
-    'Statistiques des utilisateurs',
-    'Résumé complet avec recommandations',
+    'Génère le rapport financier complet de la campagne',
+    'Génère un rapport général avec recommandations',
+    'Statistiques des utilisateurs et participation',
+    'Synthèse des réunions et taux de présence',
   ],
 };
 

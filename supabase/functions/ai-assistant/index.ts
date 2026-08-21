@@ -22,6 +22,94 @@ function fmtPct(part: number, total: number): string {
   return Math.round(part / total * 100) + "%";
 }
 
+// Roster UNIFIÉ des membres de la campagne, identique à la logique du front
+// (getByCampagneAvecRoles + Dashboard) :
+//  - fiches campagne_membres actives de la campagne
+//  - + membres du bureau (président/trésorier/secrétaire) qui n'ont pas de fiche
+//    campagne_membres (ajoutés comme fiches virtuelles)
+//  - - administrateurs GLOBAUX (campagne_id = null) : comptes techniques,
+//    ils ne sont PAS des membres de la fondation
+async function getRosterCampagne(supabaseAdmin: any, campagneId: string): Promise<any[]> {
+  const [{ data: fiches }, { data: roles }] = await Promise.all([
+    supabaseAdmin
+      .from("campagne_membres")
+      .select("*, membre:membres(nom,prenom,sexe,telephone,numero_membre,user_id), groupe:groupes(nom)")
+      .eq("campagne_id", campagneId)
+      .eq("statut", "actif"),
+    supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role, campagne_id")
+      .in("role", ["president", "tresorier", "secretaire", "administrateur"]),
+  ]);
+
+  const allFiches: any[] = fiches || [];
+
+  // Admins globaux → exclus du roster des membres
+  const globalAdminUserIds = new Set<string>(
+    (roles || [])
+      .filter((r: any) => r.role === "administrateur" && r.campagne_id === null)
+      .map((r: any) => r.user_id)
+  );
+
+  // Rôle bureau le plus prioritaire par utilisateur (hors admins globaux)
+  const ROLE_PRIORITY = ["administrateur", "president", "tresorier", "secretaire"];
+  const roleByUserId = new Map<string, string>();
+  (roles || [])
+    .filter((r: any) => !globalAdminUserIds.has(r.user_id) && (r.campagne_id === null || r.campagne_id === campagneId))
+    .forEach((r: any) => {
+      const current = roleByUserId.get(r.user_id);
+      if (!current || ROLE_PRIORITY.indexOf(r.role) < ROLE_PRIORITY.indexOf(current)) {
+        roleByUserId.set(r.user_id, r.role);
+      }
+    });
+
+  // Membres du bureau sans fiche campagne_membres → fiches virtuelles
+  const userIdsFromFiches = new Set(
+    allFiches.map((f: any) => f.membre?.user_id).filter(Boolean)
+  );
+  const missingUserIds = [...roleByUserId.keys()].filter((uid) => !userIdsFromFiches.has(uid));
+
+  let extraFiches: any[] = [];
+  if (missingUserIds.length > 0) {
+    const { data: extraMembres } = await supabaseAdmin
+      .from("membres")
+      .select("id,nom,prenom,sexe,telephone,numero_membre,user_id")
+      .in("user_id", missingUserIds);
+    extraFiches = (extraMembres || []).map((m: any) => ({
+      id: null,
+      campagne_id: campagneId,
+      membre_id: m.id,
+      groupe_id: null,
+      fonction: null,
+      statut: "actif",
+      membre: m,
+      groupe: null,
+    }));
+  }
+
+  return [...allFiches, ...extraFiches].filter((f: any) => !globalAdminUserIds.has(f.membre?.user_id));
+}
+
+// Présences par réunion (présents/absents) — nécessaires pour rédiger
+// des comptes rendus factuels sans inventer de participants.
+async function getParticipantsParReunion(supabaseAdmin: any, reunionIds: string[]): Promise<Record<string, { presents: string[]; absents: string[] }>> {
+  const map: Record<string, { presents: string[]; absents: string[] }> = {};
+  if (!reunionIds || reunionIds.length === 0) return map;
+  const { data } = await supabaseAdmin
+    .from("reunion_participants")
+    .select("reunion_id, statut_presence, membre:membres(nom,prenom)")
+    .in("reunion_id", reunionIds);
+  (data || []).forEach((p: any) => {
+    if (!map[p.reunion_id]) map[p.reunion_id] = { presents: [], absents: [] };
+    const name = fmtName(p.membre);
+    if (!name || name === "[Membre inconnu]") return;
+    if (p.statut_presence === "present" || p.statut_presence === "retard") map[p.reunion_id].presents.push(name);
+    else if (p.statut_presence === "excuse") map[p.reunion_id].absents.push(`${name} (excusé)`);
+    else map[p.reunion_id].absents.push(name);
+  });
+  return map;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -88,24 +176,23 @@ Deno.serve(async (req) => {
       // ============================================================
       if (isAdmin) {
         // Requête SANS limite pour les agrégations (membres, cotisations)
-        const [cotisationsAll, depensesAll, donsAll, quetesAll, reunionsAll, membresCampagne, campagne, objectifs, groupes] = await Promise.all([
+        const [cotisationsAll, depensesAll, donsAll, quetesAll, reunionsAll, campagne, objectifs, groupes] = await Promise.all([
           supabaseAdmin.from("cotisations").select("*, membre:membres(nom,prenom,numero_membre)").eq("campagne_id", campagneId),
           supabaseAdmin.from("depenses").select("*").eq("campagne_id", campagneId),
           supabaseAdmin.from("dons").select("*").eq("campagne_id", campagneId),
           supabaseAdmin.from("quetes").select("*, collecteur:collecteurs(*, membre:membres(nom,prenom))").eq("campagne_id", campagneId),
           supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
-          supabaseAdmin.from("campagne_membres").select("*, membre:membres(nom,prenom,sexe,telephone,numero_membre), groupe:groupes(nom)").eq("campagne_id", campagneId).eq("statut", "actif"),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
           supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId),
           supabaseAdmin.from("groupes").select("*").eq("actif", true),
         ]);
+        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
 
         const cotisations = cotisationsAll.data || [];
         const depenses = depensesAll.data || [];
         const dons = donsAll.data || [];
         const quetes = quetesAll.data || [];
         const reunions = reunionsAll.data || [];
-        const membres = membresCampagne.data || [];
 
         const tc = cotisations.reduce((s: number, c: any) => s + Number(c.montant), 0);
         const td = depenses.reduce((s: number, d: any) => s + Number(d.montant), 0);
@@ -127,12 +214,14 @@ Deno.serve(async (req) => {
 
         const membresAyantCotise = new Set(cotisations.map((c: any) => c.membre_id));
 
-        // Récupérer les rôles des membres de la campagne
-        const membresIds = membres.map((m: any) => m.membre_id);
-        const { data: membresRoles } = await supabaseAdmin
-          .from("user_roles")
-          .select("user_id, role")
-          .in("user_id", membresIds);
+        // Rôles bureau par user_id (les fiches virtuelles du roster ont membre.user_id)
+        const rosterUserIds = membres.map((m: any) => m.membre?.user_id).filter(Boolean);
+        const { data: membresRoles } = rosterUserIds.length > 0
+          ? await supabaseAdmin
+              .from("user_roles")
+              .select("user_id, role")
+              .in("user_id", rosterUserIds)
+          : { data: [] };
 
         const rolesByUser: Record<string, string[]> = {};
         (membresRoles || []).forEach((r: any) => {
@@ -149,7 +238,7 @@ Deno.serve(async (req) => {
           const g = m.groupe?.nom || "Sans groupe";
           if (!membresByGroupe[g]) membresByGroupe[g] = [];
           const name = fmtName(m.membre);
-          const userRoles = rolesByUser[m.membre_id] || [];
+          const userRoles = rolesByUser[m.membre?.user_id] || [];
           const isBureau = userRoles.some((r: string) => ["president", "tresorier", "secretaire", "responsable"].includes(r));
           const roleTag = isBureau ? ` [Bureau: ${userRoles.join(", ")}]` : "";
           membresByGroupe[g].push(`${name}${roleTag}`);
@@ -160,8 +249,14 @@ Deno.serve(async (req) => {
         membres.forEach((m: any) => { if (m.membre?.prenom || m.membre?.nom) allNames.add(fmtName(m.membre)); });
         cotisations.forEach((c: any) => { if (c.membre?.prenom || c.membre?.nom) allNames.add(fmtName(c.membre)); });
 
-        const { count: totalMembres } = await supabaseAdmin
-          .from("membres").select("id", { count: "exact", head: true }).eq("actif", true);
+        const participantsParReunion = await getParticipantsParReunion(supabaseAdmin, reunions.map((r: any) => r.id));
+        const reunionsText = reunions.map((r: any) => {
+          const p = participantsParReunion[r.id];
+          const pres = p && p.presents.length > 0 ? ` — Présents (${p.presents.length}): ${p.presents.slice(0, 15).join(", ")}` : "";
+          const abs = p && p.absents.length > 0 ? ` — Absents: ${p.absents.slice(0, 10).join(", ")}` : "";
+          const odj = r.ordre_du_jour ? ` — ODJ: ${String(r.ordre_du_jour).slice(0, 150)}` : "";
+          return `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` à ${r.lieu}` : ""}${r.heure ? ` à ${r.heure}` : ""} ${r.compte_rendu ? "✅ CR rédigé" : "❌ CR manquant"}${odj}${pres}${abs}`;
+        }).join("\n") || "Aucune";
 
         contextData = `[ADMIN - ACCÈS COMPLET] Fondation 18 Safar
 Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""}) | Statut: ${campagne.data?.statut || ""}
@@ -173,8 +268,8 @@ CHIFFRES:
 - Dons: ${tdon}FCFA (${dons.length} ops)
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres total (base): ${totalMembres || 0} | Campagne: ${membres.length}
-- NOTE: Les membres du bureau (président, trésorier, secrétaire, responsable) font partie des membres de la campagne. Les administrateurs n'en font PAS partie.
+- Membres de la fondation: ${membres.length}
+- NOTE: Ce total est la liste officielle des membres (bureau inclus). Les administrateurs sont des comptes techniques et ne font PAS partie des membres.
 
 DÉPENSES PAR CATÉGORIE:
 ${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
@@ -195,7 +290,7 @@ QUÊTES (${quetes.length}):
 ${quetes.slice(0, 10).map((q: any) => `- ${q.lieu}: ${q.montant}FCFA${q.collecteur?.membre ? ` (${fmtName(q.collecteur.membre)})` : ""}`).join("\n") || "Aucune"}
 
 RÉUNIONS (${reunions.length}, ${reunions.filter((r: any) => r.compte_rendu).length} avec CR):
-${reunions.map((r: any) => `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` à ${r.lieu}` : ""} ${r.compte_rendu ? "✅" : "❌"}`).join("\n") || "Aucune"}
+${reunionsText}
 
 DERNIÈRES OPÉRATIONS:
 ${cotisations.slice(0, 5).map((c: any) => `Cotisation: ${fmtName(c.membre)} — ${c.montant}FCFA (${c.mois_cotisation || ""})`).join("\n")}
@@ -210,16 +305,16 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // PRÉSIDENT : vue d'ensemble (tous les totaux, pas de détails individuels)
       // ============================================================
       else if (isPresident) {
-        const [cotisations, depenses, dons, quetes, reunions, membresCampagne, campagne, objectifs] = await Promise.all([
+        const [cotisations, depenses, dons, quetes, reunions, campagne, objectifs] = await Promise.all([
           supabaseAdmin.from("cotisations").select("montant").eq("campagne_id", campagneId),
           supabaseAdmin.from("depenses").select("montant").eq("campagne_id", campagneId),
           supabaseAdmin.from("dons").select("montant").eq("campagne_id", campagneId),
           supabaseAdmin.from("quetes").select("montant").eq("campagne_id", campagneId),
           supabaseAdmin.from("reunions").select("id, compte_rendu").eq("campagne_id", campagneId),
-          supabaseAdmin.from("campagne_membres").select("id").eq("campagne_id", campagneId).eq("statut", "actif"),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
           supabaseAdmin.from("objectifs").select("*").eq("campagne_id", campagneId),
         ]);
+        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
 
         const tc = (cotisations.data || []).reduce((s: number, c: any) => s + Number(c.montant), 0);
         const td = (depenses.data || []).reduce((s: number, d: any) => s + Number(d.montant), 0);
@@ -240,7 +335,7 @@ CHIFFRES:
 - Quêtes: ${tq}FCFA (${(quetes.data || []).length} ops)
 - Solde: ${tc + tdon + tq - td}FCFA
 - Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
-- Membres: ${(membresCampagne.data || []).length}
+- Membres de la fondation: ${membres.length}
 - Réunions: ${(reunions.data || []).length} (${reunionsAvecCR} avec CR)
 
 OBJECTIFS: ${objectifsText || "Aucun"}`;
@@ -320,13 +415,11 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // SECRÉTAIRE : réunions + membres
       // ============================================================
       else if (isSecretaire) {
-        const [reunions, membresCampagne, campagne] = await Promise.all([
+        const [reunions, campagne] = await Promise.all([
           supabaseAdmin.from("reunions").select("*").eq("campagne_id", campagneId).order("date_reunion", { ascending: false }),
-          supabaseAdmin.from("campagne_membres").select("*, membre:membres(nom,prenom,sexe,telephone,numero_membre), groupe:groupes(nom)").eq("campagne_id", campagneId).eq("statut", "actif"),
           supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
         ]);
-
-        const membres = membresCampagne.data || [];
+        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
 
         const membresByGroupe: Record<string, string[]> = {};
         membres.forEach((m: any) => {
@@ -340,13 +433,23 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
         const allNames = new Set<string>();
         membres.forEach((m: any) => { if (m.membre?.prenom || m.membre?.nom) allNames.add(fmtName(m.membre)); });
 
+        const reunionsData = reunions.data || [];
+        const participantsParReunion = await getParticipantsParReunion(supabaseAdmin, reunionsData.map((r: any) => r.id));
+        const reunionsText = reunionsData.map((r: any) => {
+          const p = participantsParReunion[r.id];
+          const pres = p && p.presents.length > 0 ? ` — Présents (${p.presents.length}): ${p.presents.slice(0, 15).join(", ")}` : "";
+          const abs = p && p.absents.length > 0 ? ` — Absents: ${p.absents.slice(0, 10).join(", ")}` : "";
+          const odj = r.ordre_du_jour ? ` — ODJ: ${String(r.ordre_du_jour).slice(0, 150)}` : "";
+          return `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` à ${r.lieu}` : ""}${r.heure ? ` à ${r.heure}` : ""} ${r.compte_rendu ? "✅ CR rédigé" : "❌ CR manquant"}${odj}${pres}${abs}`;
+        }).join("\n") || "Aucune réunion";
+
         contextData = `[SECRÉTAIRE - RÉUNIONS & MEMBRES] Campagne: ${campagne.data?.nom || ""}
 
 MEMBRES (${membres.length}):
 ${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):\n  ${ms.join("\n  ")}`).join("\n") || "Aucun membre"}
 
-RÉUNIONS (${(reunions.data || []).length}):
-${(reunions.data || []).map((r: any) => `- ${r.titre || "Sans titre"} du ${new Date(r.date_reunion).toLocaleDateString("fr-FR")}${r.lieu ? ` à ${r.lieu}` : ""} ${r.compte_rendu ? "✅ CR dispo" : "❌ Pas de CR"}`).join("\n") || "Aucune réunion"}
+RÉUNIONS (${reunionsData.length}):
+${reunionsText}
 
 ---
 REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
@@ -357,14 +460,12 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
       // AUTRES RÔLES : données de base
       // ============================================================
       else {
-        const [campagne, membresCampagne] = await Promise.all([
-          supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single(),
-          supabaseAdmin.from("campagne_membres").select("id").eq("campagne_id", campagneId).eq("statut", "actif"),
-        ]);
+        const campagne = await supabaseAdmin.from("campagnes").select("*").eq("id", campagneId).single();
+        const membres = await getRosterCampagne(supabaseAdmin, campagneId);
 
         contextData = `[MEMBRE] Campagne: ${campagne.data?.nom || ""} (${campagne.data?.annee || ""})
 Objectif: ${campagne.data?.objectif_global || 0}FCFA
-Membres: ${(membresCampagne.data || []).length}
+Membres de la fondation: ${membres.length}
 Statut: ${campagne.data?.statut || ""}`;
       }
     } else {
@@ -395,9 +496,61 @@ Tu peux:
 - Suggérer des actions concrètes
 - Analyser les tendances et identifier les problèmes
 
-IMPORTANT - RÔLES:
-- Les membres du bureau (président, trésorier, secrétaire, responsable) font PARTIE des membres de la campagne.
-- Les administrateurs NE font PAS partie des membres de la campagne. Ce sont des comptes techniques avec accès complet, pas des membres actifs.
+IMPORTANT - RÔLES ET MEMBRES:
+- Le nombre officiel de membres est celui indiqué dans "Membres de la fondation" du contexte. Utilise TOUJOURS ce chiffre.
+- Les membres du bureau (président, trésorier, secrétaire, responsable) font PARTIE des membres de la fondation.
+- Les administrateurs NE font PAS partie des membres de la fondation. Ce sont des comptes techniques avec accès complet, pas des membres actifs. Ne les compte JAMAIS et ne les cite JAMAIS comme membres.
+
+TÂCHES DE RÉDACTION — RAPPORTS ET COMPTES RENDUS (très important):
+Quand on te demande un rapport, une synthèse officielle ou un compte rendu, produis un document STRUCTURÉ, COMPLET et prêt à copier dans l'application. Suis EXACTEMENT ces modèles:
+
+MODÈLE 1 — RAPPORT FINANCIER:
+# RAPPORT FINANCIER — <nom de la campagne>
+## 1. Synthèse
+(2-3 phrases: recettes totales, dépenses, solde, progression de l'objectif)
+## 2. Recettes
+- Cotisations: <montant> FCFA (<n> opérations)
+- Dons: <montant> FCFA (<n> dons)
+- Quêtes: <montant> FCFA (<n> quêtes)
+- **TOTAL RECETTES: <somme> FCFA**
+## 3. Dépenses par catégorie
+(liste triée de la plus grosse à la plus petite avec montants et pourcentages)
+- **TOTAL DÉPENSES: <somme> FCFA**
+## 4. Solde
+**Solde disponible: <montant> FCFA**
+## 5. Objectif
+<recettes> / <objectif> FCFA soit <x>% atteint.
+## 6. Observations et recommandations
+(2-4 puces factuelles basées sur les données: catégories qui pesent le plus, taux de participation aux cotisations, etc.)
+
+MODÈLE 2 — RAPPORT GÉNÉRAL OU D'ACTIVITÉ:
+# RAPPORT <GÉNÉRAL | D'ACTIVITÉ> — <titre>
+## 1. Contexte et période
+## 2. Activités réalisées
+## 3. Résultats chiffrés
+(chiffres du contexte uniquement)
+## 4. Difficultés rencontrées
+## 5. Recommandations et prochaines étapes
+
+MODÈLE 3 — COMPTE RENDU DE RÉUNION:
+# COMPTE RENDU — <titre ou date de la réunion>
+**Date:** <date> | **Heure:** <heure> | **Lieu:** <lieu>
+**Présents (<n>):** <liste des noms du contexte> | **Absents:** <liste>
+## 1. Ordre du jour
+(reprendre l'ODJ réel si présent dans le contexte)
+## 2. Discussions
+(point par point de l'ODJ; si les échanges ne sont pas connus, indiquer "[À compléter]")
+## 3. Décisions prises
+("[À compléter]" si non connu - ne JAMAIS inventer une décision)
+## 4. Actions à mener
+(tableau ou liste: action — responsable — échéance)
+
+RÈGLES DE RÉDACTION:
+- Utilise UNIQUEMENT les chiffres, noms et faits présents dans le contexte. N'invente AUCUN chiffre ni nom.
+- Si une information est manquante (date, lieu, décisions, discussions), écris explicitement "[À compléter]" à sa place plutôt que d'inventer.
+- Reste factuel, précis et professionnel. Chiffres en FCFA formatés avec séparateurs de milliers.
+- Formatage markdown strict: titres avec ##, valeurs importantes en **gras**, listes à puces.
+- Pour un compte rendu, utilise la réunion demandée (la plus récente sans CR si aucune n'est précisée).
 
 SI ON TE POSE UNE QUESTION HORS DU CONTEXTE DE L'APPLICATION (politique, sport, musique, actualités, etc.), réponds poliment:
 "Je suis l'assistant de la Fondation 18 Safar. Je peux t'aider avec les données de l'association (cotisations, dépenses, membres, réunions, etc.). Pour autre chose, je ne suis pas équipé."
@@ -423,7 +576,7 @@ IMPORTANT - ANTI-HALLUCINATION:
         { role: "user", content: contextData ? `${contextData}\n\n---\nQuestion: ${message}` : message },
       ],
       temperature: 0.3,
-      max_tokens: 2048,
+      max_tokens: 3500,
     };
 
     console.log("[ai] user:", userName, "role:", roleLabel, "msg:", message.slice(0, 80));

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2 } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
@@ -62,6 +63,9 @@ const selectCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-whi
 export default function Cotisations() {
   const { campagneActive: ca } = useCampagneContext();
   const { user } = useAuth();
+  const { hasRole } = useRole();
+  // Consultation + export pour tous ; saisie/modification/suppression réservées au trésorier et à l'admin
+  const canManage = hasRole(['tresorier', 'administrateur']);
   const queryClient = useQueryClient();
 
   const [showForm, setShowForm] = usePersistedState('cot-showForm', false);
@@ -322,7 +326,7 @@ export default function Cotisations() {
         title="Cotisations"
         subtitle={`${allCotisations.length} cotisation${allCotisations.length !== 1 ? 's' : ''} · Total ${formatFCFA(total)}`}
         action={
-          <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <div className={`grid gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <ExportMenu
               label="PDF"
               wrapperClassName="relative"
@@ -349,10 +353,12 @@ export default function Cotisations() {
                 }))
               ]}
             />
-            <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-700 text-white px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
-              {showForm ? <X className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
-              <span>{showForm ? 'Annuler' : 'Nouvelle'}</span>
-            </button>
+            {canManage && (
+              <button onClick={() => { setShowForm(!showForm); resetForm(); }} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-700 text-white px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold hover:bg-primary-800 shadow-sm shadow-primary-700/20 transition-all">
+                {showForm ? <X className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
+                <span>{showForm ? 'Annuler' : 'Nouvelle'}</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -375,7 +381,7 @@ export default function Cotisations() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && canManage && (
         <form onSubmit={handleSubmit} className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-5 space-y-3 shadow-sm">
           <div className="relative">
             <label className="text-xs text-gray-500 font-medium">Membre</label>
@@ -412,7 +418,7 @@ export default function Cotisations() {
         </form>
       )}
 
-      {editing && (
+      {editing && canManage && (
         <div className="rounded-2xl border border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/20 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-primary-800 dark:text-primary-300 truncate">Modifier — {editing.membre?.prenom} {editing.membre?.nom}</h3>
@@ -472,14 +478,16 @@ export default function Cotisations() {
                       <p className="text-xs text-gray-400">{moisLabel}</p>
                     )}
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <button onClick={() => startEdit(c)} className="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors" title="Modifier">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => handleDelete(c.id)} className="text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  {canManage && (
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => startEdit(c)} className="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors" title="Modifier">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => handleDelete(c.id)} className="text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </li>
             );
