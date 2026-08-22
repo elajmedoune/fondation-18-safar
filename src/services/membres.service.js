@@ -195,24 +195,21 @@ export const membresService = {
     // Un membre est TOUJOURS créé DANS une campagne : pas de campagne = refus.
     if (!campagneId) throw new Error("Impossible de créer un membre hors campagne. Sélectionnez d'abord une campagne active.");
     // NB : "fonction" est portée par campagne_membres (par campagne), pas par membres.
+    // RPC atomique : membre + rattachement créés en UNE transaction (le trigger
+    // différé en base exige le rattachement dès la création).
     const { data: membre, error } = await supabase
-      .from('membres')
-      .insert({ nom, prenom, telephone: telephone || null, sexe: sexe || null, photo_url: photo_url || null })
-      .select()
+      .rpc('creer_membre_dans_campagne', {
+        p_campagne_id: campagneId,
+        p_nom: nom,
+        p_prenom: prenom,
+        p_telephone: telephone || null,
+        p_sexe: sexe || null,
+        p_photo_url: photo_url || null,
+        p_groupe_id: groupeId || null,
+        p_fonction: fonction || null
+      })
       .single();
     if (error) throw error;
-
-    const { error: cmErr } = await supabase.from('campagne_membres').insert({
-      campagne_id: campagneId,
-      membre_id: membre.id,
-      groupe_id: groupeId,
-      fonction: fonction || null
-    });
-    if (cmErr) {
-      // Ne jamais laisser un membre orphelin sans fiche campagne
-      await supabase.from('membres').delete().eq('id', membre.id);
-      throw cmErr;
-    }
 
     if (userId) {
       await auditLogsService.log({

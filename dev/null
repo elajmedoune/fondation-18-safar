@@ -1,278 +1,61 @@
-import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileDown, FileSpreadsheet, UserPlus, X, Search } from "lucide-react";
-import { useAuth } from "../../hooks/useAuth.js";
-import { useCampagneContext } from "../../contexts/CampagneContext.jsx";
-import { groupesService } from "../../services/groupes.service.js";
-import { membresService } from "../../services/membres.service.js";
-const selectCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
-const inputCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
-async function loadLogoBase64() {
-  try {
-    const res = await fetch("/logo.jpeg");
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-}
-function GroupeDetail() {
-  const { id } = useParams();
-  const { user } = useAuth();
-  const { campagneActive } = useCampagneContext();
-  const queryClient = useQueryClient();
-  const [nouveauResponsableId, setNouveauResponsableId] = useState("");
-  const [addingResponsable, setAddingResponsable] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [addingMembreId, setAddingMembreId] = useState(null);
-  const { data: groupe, isLoading, error } = useQuery({
-    queryKey: ["groupe-detail", id, campagneActive?.id],
-    queryFn: () => groupesService.getDetail(id, campagneActive.id),
-    enabled: !!id && !!campagneActive?.id
-  });
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["groupe-detail", id] });
-    queryClient.invalidateQueries({ queryKey: ["groupes-stats"] });
-  };
-  const handleAddResponsable = async (e) => {
-    e.preventDefault();
-    if (!nouveauResponsableId) return;
-    setAddingResponsable(true);
-    try {
-      await groupesService.addResponsable(campagneActive.id, id, nouveauResponsableId, user.id);
-      setNouveauResponsableId("");
-      invalidate();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setAddingResponsable(false);
-    }
-  };
-  const handleRemoveResponsable = async (responsableId) => {
-    if (!confirm("Retirer ce responsable ?")) return;
-    try {
-      await groupesService.removeResponsable(responsableId, { userId: user.id, campagneId: campagneActive.id });
-      invalidate();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) return;
-    setSearching(true);
-    try {
-      const results = await membresService.searchForGroupe(campagneActive.id, searchQuery);
-      setSearchResults(results);
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSearching(false);
-    }
-  };
-  const handleAddMembre = async (membreId) => {
-    setAddingMembreId(membreId);
-    try {
-      await groupesService.assignMembre(campagneActive.id, id, membreId, user.id);
-      setSearchResults((prev) => prev.filter((m) => m.id !== membreId));
-      invalidate();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setAddingMembreId(null);
-    }
-  };
-  const handleRemoveMembre = async (cm) => {
-    if (!confirm(`Retirer ${cm.membre.prenom} ${cm.membre.nom} de ce groupe ? (il reste membre)`)) return;
-    try {
-      await groupesService.removeMembreFromGroupe(cm.id, { userId: user.id, campagneId: campagneActive.id });
-      invalidate();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-  if (!campagneActive) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Aucune campagne active.");
-  if (isLoading) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Chargement...");
-  if (error) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-red-600 p-4" }, "Erreur : ", error.message);
-  if (!groupe) return /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 p-4" }, "Groupe introuvable.");
-  const responsableIds = new Set(groupe.responsables.map((r) => r.membre.id));
-  const candidatsResponsable = groupe.membres.filter((m) => !responsableIds.has(m.membre.id));
-  const buildRows = () => groupe.membres.map((cm) => ({
-    numero: cm.membre.numero_membre,
-    nom: cm.membre.nom,
-    prenom: cm.membre.prenom,
-    telephone: cm.membre.telephone || "",
-    fonction: cm.fonction || "",
-    role: responsableIds.has(cm.membre.id) ? "Responsable" : "Membre"
-  }));
-  const slug = groupe.nom.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const handleExportPdf = async () => {
-    const [logo, { default: jsPDF }, { default: autoTable }] = await Promise.all([
-      loadLogoBase64(),
-      import("jspdf"),
-      import("jspdf-autotable")
-    ]);
-    const rows = buildRows();
-    const doc = new jsPDF();
-    if (logo) {
-      try {
-        doc.addImage(logo, "JPEG", 178, 10, 18, 18);
-      } catch {
-      }
-    }
-    doc.setFontSize(14);
-    doc.text(`Groupe : ${groupe.nom}`, 14, 16);
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Campagne : ${campagneActive.nom} \u2014 ${rows.length} membre(s)`, 14, 22);
-    const responsablesTxt = groupe.responsables.length ? groupe.responsables.map((r) => `${r.membre.prenom} ${r.membre.nom}`).join(", ") : "Aucun responsable d\xE9sign\xE9";
-    doc.text(`Responsable(s) : ${responsablesTxt}`, 14, 28);
-    autoTable(doc, {
-      startY: 34,
-      head: [["N\xB0", "Nom", "Pr\xE9nom", "T\xE9l\xE9phone", "Fonction", "R\xF4le"]],
-      body: rows.map((r) => [r.numero, r.nom, r.prenom, r.telephone || "-", r.fonction || "-", r.role]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [15, 118, 110] },
-      didParseCell: (data) => {
-        if (data.section === "body" && data.row.raw[5] === "Responsable") {
-          data.cell.styles.fontStyle = "bold";
-          data.cell.styles.textColor = [15, 118, 110];
-        }
-      }
-    });
-    doc.save(`groupe-${slug}.pdf`);
-  };
-  const handleExportExcel = async () => {
-    const XLSX = await import("xlsx");
-    const rows = buildRows().map((r) => ({
-      "N\xB0 membre": r.numero,
-      "Nom": r.nom,
-      "Pr\xE9nom": r.prenom,
-      "T\xE9l\xE9phone": r.telephone,
-      "Fonction": r.fonction,
-      "R\xF4le": r.role
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 12 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, groupe.nom.slice(0, 31));
-    XLSX.writeFile(wb, `groupe-${slug}.xlsx`);
-  };
-  return /* @__PURE__ */ React.createElement("div", { className: "max-w-2xl mx-auto space-y-6 sm:space-y-8 pb-8" }, /* @__PURE__ */ React.createElement("div", { className: "sticky top-0 z-10 -mx-4 sm:mx-0 px-4 sm:px-0 pt-3 pb-3 sm:pt-0 sm:pb-0 bg-gray-50/95 dark:bg-gray-950/95 sm:bg-transparent backdrop-blur sm:backdrop-blur-none border-b border-gray-200 dark:border-gray-800 sm:border-0" }, /* @__PURE__ */ React.createElement(
-    Link,
-    {
-      to: "/groupes",
-      className: "inline-flex items-center gap-1.5 -ml-1 px-1 py-1 text-sm text-primary-700 dark:text-primary-400 active:opacity-60"
-    },
-    /* @__PURE__ */ React.createElement(ArrowLeft, { className: "h-4 w-4 shrink-0" }),
-    "Groupes"
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-3 mt-1" }, /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("h1", { className: "text-lg font-semibold truncate" }, groupe.nom), !groupe.actif && /* @__PURE__ */ React.createElement("span", { className: "shrink-0 text-xs rounded-full bg-gray-200 dark:bg-gray-800 px-2 py-0.5 text-gray-600 dark:text-gray-400" }, "D\xE9sactiv\xE9")), groupe.description && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 mt-1 line-clamp-2" }, groupe.description))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mt-3" }, /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      onClick: handleExportPdf,
-      className: "flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700"
-    },
-    /* @__PURE__ */ React.createElement(FileDown, { className: "h-3.5 w-3.5" }),
-    "Export PDF"
-  ), /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      onClick: handleExportExcel,
-      className: "flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700"
-    },
-    /* @__PURE__ */ React.createElement(FileSpreadsheet, { className: "h-3.5 w-3.5" }),
-    "Export Excel"
-  ))), /* @__PURE__ */ React.createElement("section", { className: "rounded-2xl border border-gray-200 dark:border-gray-800 p-4 sm:p-5 space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Responsables"), groupe.responsables.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Aucun responsable d\xE9sign\xE9 pour cette campagne."), groupe.responsables.map((r) => /* @__PURE__ */ React.createElement("div", { key: r.id, className: "flex items-center justify-between gap-3 text-sm" }, /* @__PURE__ */ React.createElement("span", { className: "min-w-0 truncate" }, r.membre.prenom, " ", r.membre.nom, " ", /* @__PURE__ */ React.createElement("span", { className: "text-gray-500" }, "\xB7 N\xB0 ", r.membre.numero_membre)), /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      onClick: () => handleRemoveResponsable(r.id),
-      className: "shrink-0 text-xs text-red-600 hover:underline py-1"
-    },
-    "Retirer"
-  ))), candidatsResponsable.length > 0 && /* @__PURE__ */ React.createElement(
-    "form",
-    {
-      onSubmit: handleAddResponsable,
-      className: "flex flex-col sm:flex-row gap-2 pt-3 border-t border-gray-200 dark:border-gray-800"
-    },
-    /* @__PURE__ */ React.createElement(
-      "select",
-      {
-        value: nouveauResponsableId,
-        onChange: (e) => setNouveauResponsableId(e.target.value),
-        className: selectCls
-      },
-      /* @__PURE__ */ React.createElement("option", { value: "" }, "D\xE9signer un responsable..."),
-      candidatsResponsable.map((m) => /* @__PURE__ */ React.createElement("option", { key: m.membre.id, value: m.membre.id }, m.membre.prenom, " ", m.membre.nom))
-    ),
-    /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        type: "submit",
-        disabled: addingResponsable || !nouveauResponsableId,
-        className: "shrink-0 rounded-lg bg-primary-700 text-white px-4 py-2 text-sm font-medium hover:bg-primary-800 disabled:opacity-50"
-      },
-      "Ajouter"
-    )
-  ), candidatsResponsable.length === 0 && groupe.membres.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-gray-500" }, "Ajoute d'abord des membres \xE0 ce groupe pour pouvoir d\xE9signer un responsable.")), /* @__PURE__ */ React.createElement("section", { className: "rounded-2xl border border-gray-200 dark:border-gray-800 p-4 sm:p-5 space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Ajouter un membre au groupe"), /* @__PURE__ */ React.createElement("form", { onSubmit: handleSearch, className: "flex flex-col sm:flex-row gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "relative flex-1" }, /* @__PURE__ */ React.createElement(Search, { className: "absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" }), /* @__PURE__ */ React.createElement(
-    "input",
-    {
-      placeholder: "Rechercher par nom, pr\xE9nom ou n\xB0 membre...",
-      value: searchQuery,
-      onChange: (e) => setSearchQuery(e.target.value),
-      className: `pl-9 ${inputCls}`
-    }
-  )), /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      type: "submit",
-      disabled: searching,
-      className: "shrink-0 rounded-lg bg-primary-700 text-white px-4 py-2 text-sm font-medium hover:bg-primary-800 disabled:opacity-50"
-    },
-    searching ? "..." : "Chercher"
-  )), searchResults.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5 pt-1" }, searchResults.map((m) => /* @__PURE__ */ React.createElement(
-    "div",
-    {
-      key: m.id,
-      className: "flex items-center justify-between gap-3 text-sm rounded-lg border border-gray-200 dark:border-gray-800 px-3 py-2.5"
-    },
-    /* @__PURE__ */ React.createElement("span", { className: "min-w-0 truncate" }, m.prenom, " ", m.nom, " ", /* @__PURE__ */ React.createElement("span", { className: "text-gray-500" }, "\xB7 N\xB0 ", m.numero_membre)),
-    /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => handleAddMembre(m.id),
-        disabled: addingMembreId === m.id,
-        className: "shrink-0 inline-flex items-center gap-1 text-xs text-primary-700 dark:text-primary-400 hover:underline disabled:opacity-50"
-      },
-      /* @__PURE__ */ React.createElement(UserPlus, { className: "h-3.5 w-3.5" }),
-      addingMembreId === m.id ? "Ajout..." : "Ajouter"
-    )
-  )))), /* @__PURE__ */ React.createElement("section", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium" }, "Membres (", groupe.membres.length, ")"), groupe.membres.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Aucun membre dans ce groupe pour cette campagne."), /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, groupe.membres.map((cm) => /* @__PURE__ */ React.createElement(
-    "div",
-    {
-      key: cm.id,
-      className: "flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-50 dark:hover:bg-gray-900"
-    },
-    /* @__PURE__ */ React.createElement(Link, { to: `/membres/${cm.membre.id}`, className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-medium truncate" }, cm.membre.prenom, " ", cm.membre.nom), /* @__PURE__ */ React.createElement("p", { className: "text-xs text-gray-500 truncate" }, "N\xB0 ", cm.membre.numero_membre, cm.fonction ? ` \xB7 ${cm.fonction}` : "")),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 shrink-0" }, responsableIds.has(cm.membre.id) && /* @__PURE__ */ React.createElement("span", { className: "hidden xs:inline text-xs rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-2 py-0.5" }, "Responsable"), /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => handleRemoveMembre(cm),
-        title: "Retirer du groupe",
-        className: "p-1.5 rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
-      },
-      /* @__PURE__ */ React.createElement(X, { className: "h-4 w-4" })
-    ))
-  )))));
-}
-export {
-  GroupeDetail as default
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const json = (body, status) => new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status
+  });
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return json({ error: "Non authentifi\xE9" }, 401);
+    const supabaseUser = createClient(
+      Deno.env.get("SUPABASE_URL"),
+      Deno.env.get("SUPABASE_ANON_KEY"),
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error: userErr } = await supabaseUser.auth.getUser();
+    if (userErr || !user) return json({ error: "Session invalide" }, 401);
+    const { data: callerRoles } = await supabaseUser.from("user_roles").select("role").eq("user_id", user.id).eq("role", "administrateur");
+    if (!callerRoles || callerRoles.length === 0) {
+      return json({ error: "Seul un administrateur peut cr\xE9er un utilisateur" }, 403);
+    }
+    const body = await req.json();
+    const { email, nom, prenom, telephone, role, campagne_id, groupe_id } = body;
+    if (!email || !nom || !prenom || !role) {
+      return json({ error: "Champs manquants" }, 400);
+    }
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL"),
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    );
+    const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    if (inviteErr) throw inviteErr;
+    const newUserId = invited.user.id;
+    const { error: roleErr } = await supabaseAdmin.from("user_roles").insert({
+      user_id: newUserId,
+      role,
+      campagne_id: campagne_id || null,
+      groupe_id: groupe_id || null
+    });
+    if (roleErr) throw roleErr;
+    const { data: membre, error: membreErr } = await supabaseAdmin.rpc(
+      "creer_membre_dans_campagne",
+      {
+        p_campagne_id: campagne_id || null,
+        p_user_id: newUserId,
+        p_nom: nom,
+        p_prenom: prenom,
+        p_telephone: telephone || null
+      }
+    );
+    if (membreErr) throw membreErr;
+    return json({ success: true, user_id: newUserId }, 200);
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
+});

@@ -68,16 +68,8 @@ Deno.serve(async (req) => {
 
     const newUserId = invited.user.id;
 
-    // 2. Créer le membre (numero_membre non fourni -> généré automatiquement par la DB)
-    const { error: membreErr } = await supabaseAdmin.from('membres').insert({
-      user_id: newUserId,
-      nom,
-      prenom,
-      telephone: telephone || null
-    });
-    if (membreErr) throw membreErr;
-
-    // 3. Attribuer le rôle
+    // 2. Attribuer le rôle D'ABORD : le trigger différé sur "membres" lit
+    //    user_roles au COMMIT pour exempter les admins globaux (sans campagne).
     const { error: roleErr } = await supabaseAdmin.from('user_roles').insert({
       user_id: newUserId,
       role,
@@ -85,6 +77,20 @@ Deno.serve(async (req) => {
       groupe_id: groupe_id || null
     });
     if (roleErr) throw roleErr;
+
+    // 3. Créer le membre + son rattachement campagne EN UNE SEULE TRANSACTION
+    //    via la RPC (le trigger différé exige le rattachement dès la création).
+    const { data: membre, error: membreErr } = await supabaseAdmin.rpc(
+      'creer_membre_dans_campagne',
+      {
+        p_campagne_id: campagne_id || null,
+        p_user_id: newUserId,
+        p_nom: nom,
+        p_prenom: prenom,
+        p_telephone: telephone || null
+      }
+    );
+    if (membreErr) throw membreErr;
 
     return json({ success: true, user_id: newUserId }, 200);
   } catch (err) {
