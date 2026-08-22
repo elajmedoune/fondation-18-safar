@@ -109,7 +109,7 @@ export default function Landing() {
           <h1 className="landing-fade-delay-1 text-5xl sm:text-6xl md:text-7xl font-black tracking-tighter text-white">
             Fondation
             <span className="block bg-gradient-to-r from-amber-200 via-white to-amber-200 bg-clip-text text-transparent text-shimmer">
-              18 Safar
+              18 صفر
             </span>
           </h1>
 
