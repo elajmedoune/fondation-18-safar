@@ -14,7 +14,7 @@ export default function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-700 text-white shadow-sm shadow-primary-700/30 shrink-0">
           <Landmark size={16} />
         </div>
-        <span className="font-extrabold text-primary-800 dark:text-primary-300 text-lg tracking-tight">18 Safar</span>
+        <span className="font-extrabold text-primary-800 dark:text-primary-300 text-lg tracking-tight">18 صفر</span>
       </Link>
 
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">

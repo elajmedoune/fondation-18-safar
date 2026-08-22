@@ -1,11 +1,4 @@
-=== COMMANDES DE DEPLOIEMENT (Windows PowerShell) ===
+  Session   Erreur 400 trigger membre campagne Supabase
+  Continue  opencode -s ses_fd65d2a7affek1sdWqsovlyF0p
 
-cd C:\Users\hp\fondation-18-safar
-
--- Frontend (Vercel via git)
-git add .
-git commit -m "Push"
-git push
-
--- Fonction IA (Supabase Edge Function)
-supabase functions deploy ai-assistant --project-ref hdtyltyxugwtbycnnakb
+hp@medoune:/mnt/c/Users/hp/fondation-18-safar$
