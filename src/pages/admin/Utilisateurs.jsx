@@ -9,11 +9,24 @@ import { ROLES } from '../../constants/roles.js';
 import { supabase } from '../../lib/supabaseClient.js';
 import { invokeSafe } from '../../lib/invokeSafe.js';
 
+// Tous les rôles existants (affichage des badges)
 const ROLE_OPTIONS = [
   { value: ROLES.TRESORIER, label: 'Trésorier' },
   { value: ROLES.SECRETAIRE, label: 'Secrétaire' },
   { value: ROLES.PRESIDENT, label: 'Président' },
   { value: ROLES.ADMINISTRATEUR, label: 'Administrateur' }
+];
+
+// Rôles attribuables DEPUIS L'APP : uniquement le bureau, rattaché à la
+// campagne active. Les comptes ADMINISTRATEURS (techniques, indépendants
+// des campagnes) se créent directement dans Supabase :
+//   1. Dashboard -> Authentication -> Users -> Add user (email + mot de passe)
+//   2. SQL Editor : insert into user_roles (user_id, role)
+//      select id, 'administrateur' from auth.users where email = '...';
+const ASSIGNABLE_ROLES = [
+  { value: ROLES.TRESORIER, label: 'Trésorier' },
+  { value: ROLES.SECRETAIRE, label: 'Secrétaire' },
+  { value: ROLES.PRESIDENT, label: 'Président' }
 ];
 
 const BUREAU_ROLES = [ROLES.PRESIDENT, ROLES.TRESORIER, ROLES.SECRETAIRE];
@@ -55,7 +68,6 @@ export default function Utilisateurs() {
   const [accTelephone, setAccTelephone] = useState('');
   const [accGroupeId, setAccGroupeId] = useState('');
   const [accRole, setAccRole] = useState(ROLES.TRESORIER);
-  const [sansProfil, setSansProfil] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
@@ -95,7 +107,7 @@ export default function Utilisateurs() {
 
   const resetForm = () => {
     setAccEmail(''); setAccNom(''); setAccPrenom(''); setAccTelephone('');
-    setAccGroupeId(''); setMembreChoisi(null); setSearchQuery(''); setSansProfil(false); setFeedback(null);
+    setAccGroupeId(''); setMembreChoisi(null); setSearchQuery(''); setFeedback(null);
   };
 
   const handleSearch = async (e) => {
@@ -114,10 +126,8 @@ export default function Utilisateurs() {
     setSubmitting(true);
     setFeedback(null);
     try {
-      const body = { email: accEmail, role: accRole, campagne_id: accRole === ROLES.ADMINISTRATEUR ? null : (campagneActive?.id || null) };
-      if (accRole === ROLES.ADMINISTRATEUR && sansProfil) {
-        body.sans_profil_membre = true;
-      } else if (mode === 'existant') {
+      const body = { email: accEmail, role: accRole, campagne_id: campagneActive?.id || null };
+      if (mode === 'existant') {
         if (!membreChoisi) throw new Error('Choisis un membre existant.');
         body.existing_membre_id = membreChoisi.id;
       } else {
@@ -168,21 +178,19 @@ export default function Utilisateurs() {
         const existingRole = editingUser.roles[0];
         await rolesService.update(existingRole.id, {
           role: editRoleValue,
-          campagneId: editRoleValue === ROLES.ADMINISTRATEUR ? null : (campagneActive?.id || null)
+          campagneId: campagneActive?.id || null
         }, currentUser.id);
       } else {
         await rolesService.assign({
           userId: editingUser.id,
           role: editRoleValue,
-          campagneId: editRoleValue === ROLES.ADMINISTRATEUR ? null : (campagneActive?.id || null)
+          campagneId: campagneActive?.id || null
         }, currentUser.id);
       }
       setEditingUser(null);
       refresh();
     } catch (err) { alert(err.message); }
   };
-
-  const adminSansProfilActif = accRole === ROLES.ADMINISTRATEUR && sansProfil;
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto pb-8">
@@ -215,20 +223,12 @@ export default function Utilisateurs() {
           <form onSubmit={handleSubmit} className="space-y-3">
             <input type="email" id="acc-email" name="acc-email" placeholder="Email" value={accEmail} onChange={(e) => setAccEmail(e.target.value)} required className={inputCls} />
             <select id="acc-role" name="acc-role" value={accRole} onChange={(e) => setAccRole(e.target.value)} className={selectCls}>
-              {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {ASSIGNABLE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
-            {accRole === ROLES.ADMINISTRATEUR && (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" id="sans-profil" name="sans-profil" checked={sansProfil} onChange={(e) => setSansProfil(e.target.checked)} />
-                Compte admin technique (pas de profil membre)
-              </label>
-            )}
-            {!adminSansProfilActif && (
-              <>
-                <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                  <label className="flex items-center gap-2"><input type="radio" id="mode-existant" name="mode-membre" checked={mode === 'existant'} onChange={() => setMode('existant')} /> Membre existant</label>
-                  <label className="flex items-center gap-2"><input type="radio" id="mode-nouveau" name="mode-membre" checked={mode === 'nouveau'} onChange={() => setMode('nouveau')} /> Nouveau membre</label>
-                </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+              <label className="flex items-center gap-2"><input type="radio" id="mode-existant" name="mode-membre" checked={mode === 'existant'} onChange={() => setMode('existant')} /> Membre existant</label>
+              <label className="flex items-center gap-2"><input type="radio" id="mode-nouveau" name="mode-membre" checked={mode === 'nouveau'} onChange={() => setMode('nouveau')} /> Nouveau membre</label>
+            </div>
                 {mode === 'existant' ? (
                   <div className="relative">
                     <input type="text" id="search-membre" name="search-membre" placeholder="Nom, prénom ou numéro..." value={searchQuery} onChange={handleSearch} className={inputCls} />
@@ -256,8 +256,6 @@ export default function Utilisateurs() {
                     </select>
                   </div>
                 )}
-              </>
-            )}
             <button type="submit" disabled={submitting} className="w-full rounded-lg bg-primary-700 text-white py-2.5 text-sm font-medium hover:bg-primary-800 disabled:opacity-50">
               {submitting ? 'Création...' : "Créer et envoyer l'invitation"}
             </button>
@@ -283,7 +281,7 @@ export default function Utilisateurs() {
                     <p className="text-gray-500 text-xs">{r.campagne_id ? 'campagne actuelle' : 'global'} {r.groupe?.nom ? `· ${r.groupe.nom}` : ''}</p>
                   </div>
                 </div>
-                {isAdmin && r.user_id !== currentUser.id && (
+                {isAdmin && r.user_id !== currentUser.id && r.role !== ROLES.ADMINISTRATEUR && (
                     <button onClick={() => handleRemoveRole(r.id, r.membre ? `${r.membre.prenom} ${r.membre.nom}` : null)} className="self-start sm:self-auto text-red-600 hover:underline text-xs shrink-0">Retirer</button>
                 )}
               </li>
@@ -333,10 +331,12 @@ export default function Utilisateurs() {
                   </div>
                   {!isSelf && isAdmin && (
                     <div className="flex items-center gap-2 shrink-0">
-                      {isEditingThis ? (
+                      {c.roles.some((r) => r.role === ROLES.ADMINISTRATEUR) ? (
+                        <span className="text-gray-400 text-xs italic">géré via Supabase</span>
+                      ) : isEditingThis ? (
                         <div className="flex items-center gap-1.5">
                           <select id="edit-role" name="edit-role" value={editRoleValue} onChange={(e) => setEditRoleValue(e.target.value)} className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs">
-                            {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                            {ASSIGNABLE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                           </select>
                           <button onClick={handleSaveRole} className="text-green-600 hover:underline text-xs font-medium">Valider</button>
                           <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:underline text-xs">Annuler</button>

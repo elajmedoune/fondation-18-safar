@@ -1,61 +1,200 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, X, Shield, UserX, UserCheck, Search, Mail } from "lucide-react";
+import { useCampagneContext } from "../../contexts/CampagneContext.jsx";
+import { useAuth } from "../../hooks/useAuth.js";
+import { membresService } from "../../services/membres.service.js";
+import { rolesService } from "../../services/roles.service.js";
+import { ROLES } from "../../constants/roles.js";
+import { supabase } from "../../lib/supabaseClient.js";
+import { invokeSafe } from "../../lib/invokeSafe.js";
+const ROLE_OPTIONS = [
+  { value: ROLES.TRESORIER, label: "Tr\xE9sorier" },
+  { value: ROLES.SECRETAIRE, label: "Secr\xE9taire" },
+  { value: ROLES.PRESIDENT, label: "Pr\xE9sident" },
+  { value: ROLES.ADMINISTRATEUR, label: "Administrateur" }
+];
+const ASSIGNABLE_ROLES = [
+  { value: ROLES.TRESORIER, label: "Tr\xE9sorier" },
+  { value: ROLES.SECRETAIRE, label: "Secr\xE9taire" },
+  { value: ROLES.PRESIDENT, label: "Pr\xE9sident" }
+];
+const BUREAU_ROLES = [ROLES.PRESIDENT, ROLES.TRESORIER, ROLES.SECRETAIRE];
+const ROLE_COLORS = {
+  tresorier: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  secretaire: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  president: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  administrateur: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
 };
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  const json = (body, status) => new Response(JSON.stringify(body), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-    status
-  });
+async function extractErrorMessage(error) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "Non authentifi\xE9" }, 401);
-    const supabaseUser = createClient(
-      Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_ANON_KEY"),
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    const { data: { user }, error: userErr } = await supabaseUser.auth.getUser();
-    if (userErr || !user) return json({ error: "Session invalide" }, 401);
-    const { data: callerRoles } = await supabaseUser.from("user_roles").select("role").eq("user_id", user.id).eq("role", "administrateur");
-    if (!callerRoles || callerRoles.length === 0) {
-      return json({ error: "Seul un administrateur peut cr\xE9er un utilisateur" }, 403);
-    }
-    const body = await req.json();
-    const { email, nom, prenom, telephone, role, campagne_id, groupe_id } = body;
-    if (!email || !nom || !prenom || !role) {
-      return json({ error: "Champs manquants" }, 400);
-    }
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-    );
-    const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
-    if (inviteErr) throw inviteErr;
-    const newUserId = invited.user.id;
-    const { error: roleErr } = await supabaseAdmin.from("user_roles").insert({
-      user_id: newUserId,
-      role,
-      campagne_id: campagne_id || null,
-      groupe_id: groupe_id || null
-    });
-    if (roleErr) throw roleErr;
-    const { data: membre, error: membreErr } = await supabaseAdmin.rpc(
-      "creer_membre_dans_campagne",
-      {
-        p_campagne_id: campagne_id || null,
-        p_user_id: newUserId,
-        p_nom: nom,
-        p_prenom: prenom,
-        p_telephone: telephone || null
-      }
-    );
-    if (membreErr) throw membreErr;
-    return json({ success: true, user_id: newUserId }, 200);
-  } catch (err) {
-    return json({ error: err.message }, 500);
+    const body = await error.context.json();
+    return body?.error || error.message;
+  } catch {
+    return error.message;
   }
-});
+}
+const inputCls = "rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 w-full";
+const selectCls = "rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 w-full";
+const cardCls = "rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 shadow-sm";
+export default function Utilisateurs() {
+  const { campagneActive } = useCampagneContext();
+  const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [mode, setMode] = useState("existant");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [membreChoisi, setMembreChoisi] = useState(null);
+  const [accEmail, setAccEmail] = useState("");
+  const [accNom, setAccNom] = useState("");
+  const [accPrenom, setAccPrenom] = useState("");
+  const [accTelephone, setAccTelephone] = useState("");
+  const [accGroupeId, setAccGroupeId] = useState("");
+  const [accRole, setAccRole] = useState(ROLES.TRESORIER);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editRoleValue, setEditRoleValue] = useState(ROLES.TRESORIER);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["user_roles"] });
+    queryClient.invalidateQueries({ queryKey: ["comptes"] });
+  };
+  const { data: groupes = [] } = useQuery({
+    queryKey: ["groupes"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("groupes").select("*").order("nom");
+      if (error) throw error;
+      return data;
+    }
+  });
+  const { data: roles = [] } = useQuery({
+    queryKey: ["user_roles"],
+    queryFn: () => rolesService.listWithMembre()
+  });
+  const isAdmin = roles.some((r) => r.user_id === currentUser.id && r.role === ROLES.ADMINISTRATEUR);
+  const { data: comptes = [], isLoading: loadingComptes, isError: erreurComptes, refetch: refetchComptes } = useQuery({
+    queryKey: ["comptes"],
+    queryFn: async () => {
+      const { data, error } = await invokeSafe("list-users");
+      if (error) throw new Error(await extractErrorMessage(error));
+      return data.users;
+    },
+    retry: 1
+  });
+  const resetForm = () => {
+    setAccEmail("");
+    setAccNom("");
+    setAccPrenom("");
+    setAccTelephone("");
+    setAccGroupeId("");
+    setMembreChoisi(null);
+    setSearchQuery("");
+    setFeedback(null);
+  };
+  const handleSearch = async (e) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    setMembreChoisi(null);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const res = await membresService.search(value);
+    setSearchResults(res);
+  };
+  const selectMembre = (m) => {
+    setMembreChoisi(m);
+    setSearchResults([]);
+    setSearchQuery(`${m.prenom} ${m.nom} \u2014 ${m.numero_membre}`);
+  };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const body = { email: accEmail, role: accRole, campagne_id: campagneActive?.id || null };
+      if (mode === "existant") {
+        if (!membreChoisi) throw new Error("Choisis un membre existant.");
+        body.existing_membre_id = membreChoisi.id;
+      } else {
+        body.nom = accNom;
+        body.prenom = accPrenom;
+        body.telephone = accTelephone || null;
+        body.membre_groupe_id = accGroupeId || null;
+      }
+      const { data, error } = await invokeSafe("create-user-with-role", { body });
+      if (error) throw new Error(await extractErrorMessage(error));
+      if (data?.error) throw new Error(data.error);
+      setFeedback({ type: "success", message: `Invitation envoy\xE9e \xE0 ${accEmail}.` });
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["user_roles"] });
+      queryClient.invalidateQueries({ queryKey: ["comptes"] });
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: "error", message: err.message || "Erreur lors de la cr\xE9ation." });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const handleRemoveRole = async (id, membreNom) => {
+    if (!confirm(`Retirer ce role a ${membreNom || "cet utilisateur"} ? Il ne pourra plus se connecter a l'application.`)) return;
+    await rolesService.remove(id, { userId: currentUser.id, campagneId: campagneActive?.id || null });
+    queryClient.invalidateQueries({ queryKey: ["user_roles"] });
+    queryClient.invalidateQueries({ queryKey: ["comptes"] });
+  };
+  const handleToggleBan = async (targetUserId, ban) => {
+    if (!confirm(ban ? "D\xE9sactiver ce compte ? Les donn\xE9es sont conserv\xE9es." : "R\xE9activer ce compte ?")) return;
+    try {
+      const { data, error } = await invokeSafe("toggle-user-ban", { body: { target_user_id: targetUserId, ban } });
+      if (error) throw new Error(await extractErrorMessage(error));
+      if (data?.error) throw new Error(data.error);
+      queryClient.invalidateQueries({ queryKey: ["comptes"] });
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  const startEditRole = (compte) => {
+    const currentRole = compte.roles[0]?.role || ROLES.TRESORIER;
+    setEditingUser(compte);
+    setEditRoleValue(currentRole);
+  };
+  const handleSaveRole = async () => {
+    if (!editingUser) return;
+    try {
+      if (editingUser.roles.length > 0) {
+        const existingRole = editingUser.roles[0];
+        await rolesService.update(existingRole.id, {
+          role: editRoleValue,
+          campagneId: campagneActive?.id || null
+        }, currentUser.id);
+      } else {
+        await rolesService.assign({
+          userId: editingUser.id,
+          role: editRoleValue,
+          campagneId: campagneActive?.id || null
+        }, currentUser.id);
+      }
+      setEditingUser(null);
+      refresh();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-8 max-w-2xl mx-auto pb-8" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-lg font-semibold flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Shield, { className: "h-5 w-5" }), " Administration"), /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500 mt-0.5" }, "Gestion des utilisateurs et r\xF4les.")), /* @__PURE__ */ React.createElement("section", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2" }, /* @__PURE__ */ React.createElement("h2", { className: "text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide" }, /* @__PURE__ */ React.createElement(Shield, { className: "h-3.5 w-3.5" }), " Utilisateurs & roles"), isAdmin && /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        setShowForm(!showForm);
+        if (showForm) resetForm();
+      },
+      className: "inline-flex items-center gap-1 text-xs rounded-lg bg-primary-700 text-white px-3 py-1.5 font-medium hover:bg-primary-800 active:scale-[0.98] transition shrink-0"
+    },
+    showForm ? /* @__PURE__ */ React.createElement(X, { className: "h-3 w-3" }) : /* @__PURE__ */ React.createElement(Plus, { className: "h-3 w-3" }),
+    showForm ? "Annuler" : "Donner un acc\xE8s"
+  )), showForm && /* @__PURE__ */ React.createElement("section", { className: `${cardCls} p-4 space-y-3` }, /* @__PURE__ */ React.createElement("h2", { className: "font-medium text-sm" }, "Donner un acc\xE8s (compte)"), /* @__PURE__ */ React.createElement("form", { onSubmit: handleSubmit, className: "space-y-3" }, /* @__PURE__ */ React.createElement("input", { type: "email", id: "acc-email", name: "acc-email", placeholder: "Email", value: accEmail, onChange: (e) => setAccEmail(e.target.value), required: true, className: inputCls }), /* @__PURE__ */ React.createElement("select", { id: "acc-role", name: "acc-role", value: accRole, onChange: (e) => setAccRole(e.target.value), className: selectCls }, ASSIGNABLE_ROLES.map((r) => /* @__PURE__ */ React.createElement("option", { key: r.value, value: r.value }, r.label))), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-x-4 gap-y-2 text-sm" }, /* @__PURE__ */ React.createElement("label", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("input", { type: "radio", id: "mode-existant", name: "mode-membre", checked: mode === "existant", onChange: () => setMode("existant") }), " Membre existant"), /* @__PURE__ */ React.createElement("label", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("input", { type: "radio", id: "mode-nouveau", name: "mode-membre", checked: mode === "nouveau", onChange: () => setMode("nouveau") }), " Nouveau membre")), mode === "existant" ? /* @__PURE__ */ React.createElement("div", { className: "relative" }, /* @__PURE__ */ React.createElement("input", { type: "text", id: "search-membre", name: "search-membre", placeholder: "Nom, pr\xE9nom ou num\xE9ro...", value: searchQuery, onChange: handleSearch, className: inputCls }), searchResults.length > 0 && /* @__PURE__ */ React.createElement("ul", { className: "absolute z-10 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg max-h-56 overflow-auto" }, searchResults.map((m) => /* @__PURE__ */ React.createElement("li", { key: m.id }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => selectMembre(m), className: "w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm" }, m.prenom, " ", m.nom, " ", /* @__PURE__ */ React.createElement("span", { className: "text-gray-500" }, "\u2014 ", m.numero_membre), m.user_id && /* @__PURE__ */ React.createElement("span", { className: "text-amber-600 text-xs" }, " (a d\xE9j\xE0 un compte)")))))) : /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement("input", { id: "acc-nom", name: "acc-nom", placeholder: "Nom", value: accNom, onChange: (e) => setAccNom(e.target.value), required: true, className: inputCls }), /* @__PURE__ */ React.createElement("input", { id: "acc-prenom", name: "acc-prenom", placeholder: "Pr\xE9nom", value: accPrenom, onChange: (e) => setAccPrenom(e.target.value), required: true, className: inputCls }), /* @__PURE__ */ React.createElement("input", { id: "acc-telephone", name: "acc-telephone", placeholder: "T\xE9l\xE9phone", value: accTelephone, onChange: (e) => setAccTelephone(e.target.value), className: `sm:col-span-2 ${inputCls}` }), /* @__PURE__ */ React.createElement("select", { id: "acc-groupe", name: "acc-groupe", value: accGroupeId, onChange: (e) => setAccGroupeId(e.target.value), className: `sm:col-span-2 ${selectCls}` }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Groupe (optionnel)..."), groupes.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.nom)))), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: submitting, className: "w-full rounded-lg bg-primary-700 text-white py-2.5 text-sm font-medium hover:bg-primary-800 disabled:opacity-50" }, submitting ? "Cr\xE9ation..." : "Cr\xE9er et envoyer l'invitation")), feedback && /* @__PURE__ */ React.createElement("p", { className: `text-sm ${feedback.type === "success" ? "text-green-600" : "text-red-600"}` }, feedback.message)), /* @__PURE__ */ React.createElement("section", { className: "space-y-2" }, /* @__PURE__ */ React.createElement("h2", { className: "text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide" }, /* @__PURE__ */ React.createElement(Shield, { className: "h-3.5 w-3.5" }), " R\xF4les attribu\xE9s"), roles.length === 0 ? /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Aucun r\xF4le attribu\xE9.") : /* @__PURE__ */ React.createElement("ul", { className: `divide-y divide-gray-200 dark:divide-gray-800 ${cardCls} overflow-hidden` }, roles.map((r) => /* @__PURE__ */ React.createElement("li", { key: r.id, className: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-3 text-sm" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 min-w-0" }, /* @__PURE__ */ React.createElement("span", { className: `shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[r.role] || "bg-gray-100 text-gray-600"}` }, ROLE_OPTIONS.find((o) => o.value === r.role)?.label || r.role), /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: "font-medium truncate" }, r.user_id === currentUser.id ? "Toi" : r.membre ? `${r.membre.prenom} ${r.membre.nom}` : r.user_id.slice(0, 8)), /* @__PURE__ */ React.createElement("p", { className: "text-gray-500 text-xs" }, r.campagne_id ? "campagne actuelle" : "global", " ", r.groupe?.nom ? `\xB7 ${r.groupe.nom}` : ""))), isAdmin && r.user_id !== currentUser.id && r.role !== ROLES.ADMINISTRATEUR && /* @__PURE__ */ React.createElement("button", { onClick: () => handleRemoveRole(r.id, r.membre ? `${r.membre.prenom} ${r.membre.nom}` : null), className: "self-start sm:self-auto text-red-600 hover:underline text-xs shrink-0" }, "Retirer"))))), /* @__PURE__ */ React.createElement("section", { className: "space-y-2" }, /* @__PURE__ */ React.createElement("h2", { className: "text-sm font-medium text-gray-500 flex items-center gap-1.5 uppercase tracking-wide" }, /* @__PURE__ */ React.createElement(Mail, { className: "h-3.5 w-3.5" }), " Comptes existants"), loadingComptes ? /* @__PURE__ */ React.createElement("p", { className: "text-sm text-gray-500" }, "Chargement...") : erreurComptes ? /* @__PURE__ */ React.createElement("div", { className: "rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 px-4 py-3 flex items-center justify-between gap-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm text-red-700 dark:text-red-400" }, "Impossible de charger les comptes (session expir\xE9e ?)."), /* @__PURE__ */ React.createElement("button", { onClick: () => refetchComptes(), className: "shrink-0 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors" }, "R\xE9essayer")) : /* @__PURE__ */ React.createElement("ul", { className: `divide-y divide-gray-200 dark:divide-gray-800 ${cardCls} overflow-hidden` }, comptes.map((c) => {
+    const isSelf = c.id === currentUser.id;
+    const isEditingThis = editingUser?.id === c.id;
+    return /* @__PURE__ */ React.createElement("li", { key: c.id, className: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-3 text-sm" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 min-w-0" }, c.membre?.photo_url ? /* @__PURE__ */ React.createElement("img", { src: c.membre.photo_url, alt: "", className: "h-9 w-9 rounded-full object-cover shrink-0" }) : /* @__PURE__ */ React.createElement("div", { className: "h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 text-xs font-medium shrink-0" }, c.membre?.prenom?.[0], c.membre?.nom?.[0]), /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: "font-medium truncate" }, c.membre ? `${c.membre.prenom} ${c.membre.nom}` : c.email, isSelf && /* @__PURE__ */ React.createElement("span", { className: "text-xs text-gray-400" }, " (toi)")), /* @__PURE__ */ React.createElement("p", { className: "text-gray-500 text-xs truncate" }, c.email, " \xB7 ", c.roles.length > 0 ? c.roles.map((r) => r.role).join(", ") : /* @__PURE__ */ React.createElement("span", { className: "text-red-500 font-medium" }, "aucun role \u2014 acces bloque"), c.banned && /* @__PURE__ */ React.createElement("span", { className: "text-red-600" }, " \xB7 desactive")))), !isSelf && isAdmin && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 shrink-0" }, c.roles.some((r) => r.role === ROLES.ADMINISTRATEUR) ? /* @__PURE__ */ React.createElement("span", { className: "text-gray-400 text-xs italic" }, "g\xE9r\xE9 via Supabase") : isEditingThis ? /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement("select", { id: "edit-role", name: "edit-role", value: editRoleValue, onChange: (e) => setEditRoleValue(e.target.value), className: "rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs" }, ASSIGNABLE_ROLES.map((r) => /* @__PURE__ */ React.createElement("option", { key: r.value, value: r.value }, r.label))), /* @__PURE__ */ React.createElement("button", { onClick: handleSaveRole, className: "text-green-600 hover:underline text-xs font-medium" }, "Valider"), /* @__PURE__ */ React.createElement("button", { onClick: () => setEditingUser(null), className: "text-gray-400 hover:underline text-xs" }, "Annuler")) : /* @__PURE__ */ React.createElement(React.Fragment, null, c.roles.length > 0 && /* @__PURE__ */ React.createElement("button", { onClick: () => startEditRole(c), className: "text-primary-600 hover:underline text-xs" }, "Modifier"), c.roles.length === 0 && /* @__PURE__ */ React.createElement("button", { onClick: () => startEditRole(c), className: "text-green-600 hover:underline text-xs font-medium" }, "Attribuer"), /* @__PURE__ */ React.createElement("button", { onClick: () => handleToggleBan(c.id, !c.banned), className: `inline-flex items-center gap-1 text-xs ${c.banned ? "text-green-600 hover:underline" : "text-red-600 hover:underline"}` }, c.banned ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(UserCheck, { className: "h-3 w-3" }), " Reactiver") : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(UserX, { className: "h-3 w-3" }), " Desactiver")))));
+  })))));
+}
