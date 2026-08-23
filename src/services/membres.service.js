@@ -102,10 +102,10 @@ export const membresService = {
       });
   },
 
-  // Utilisé par le scanner : reconnaît TOUS les membres (même définition que la
-  // page Membres), avec ou sans rattachement à la campagne active. La fiche
-  // campagne (groupe/fonction) est optionnelle. Les comptes liés à un admin
-  // global ne sont pas reconnus.
+  // Utilisé par le scanner : reconnaît UNIQUEMENT les membres rattachés à la
+  // campagne active (isolation stricte : la carte d'un membre d'une autre
+  // campagne est "introuvable"). Les comptes liés à un admin global ne sont
+  // pas reconnus.
   async getFicheByQrCode(qrValue, campagneId) {
     const { data: membre, error } = await supabase
       .from('membres')
@@ -118,18 +118,19 @@ export const membresService = {
     const adminIds = await this.getGlobalAdminUserIds();
     if (membre.user_id && adminIds.has(membre.user_id)) return null;
 
-    let fiche = null;
-    if (campagneId) {
-      const { data } = await supabase
-        .from('campagne_membres')
-        .select('id, fonction, statut, groupe:groupes(*)')
-        .eq('membre_id', membre.id)
-        .eq('campagne_id', campagneId)
-        .maybeSingle();
-      fiche = data || null;
-    }
+    // La fiche dans la campagne active est OBLIGATOIRE : sans elle, on refuse
+    // le scan (sinon on pourrait encaisser des cotisations pour un membre
+    // qui n'appartient pas à cette campagne).
+    if (!campagneId) return null;
+    const { data: fiche } = await supabase
+      .from('campagne_membres')
+      .select('id, fonction, statut, groupe:groupes(*)')
+      .eq('membre_id', membre.id)
+      .eq('campagne_id', campagneId)
+      .maybeSingle();
+    if (!fiche) return null;
 
-    return { ...membre, campagne_membres: fiche ? [fiche] : [] };
+    return { ...membre, campagne_membres: [fiche] };
   },
 
   async getFicheMembre(membreId, campagneId) {
