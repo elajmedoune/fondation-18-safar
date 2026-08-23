@@ -79,12 +79,22 @@ export default function ScanQR() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Scan history (persisted in sessionStorage)
-  const [scanHistory, setScanHistory] = useState(() => {
+  // Scan history (sessionStorage, ISOLE PAR CAMPAGNE : la clé inclut
+  // l'id de campagne pour ne jamais afficher les scans d'une autre campagne)
+  const [scanHistory, setScanHistory] = useState([]);
+
+  useEffect(() => {
+    // Purge de l'ancienne clé non-namespacée (données potentiellement
+    // mélangées entre campagnes)
+    sessionStorage.removeItem('scanHistory');
+    if (!campagneActive?.id) {
+      setScanHistory([]);
+      return;
+    }
     try {
-      return JSON.parse(sessionStorage.getItem('scanHistory') || '[]');
-    } catch { return []; }
-  });
+      setScanHistory(JSON.parse(sessionStorage.getItem(`scanHistory_${campagneActive.id}`) || '[]'));
+    } catch { setScanHistory([]); }
+  }, [campagneActive?.id]);
 
   useEffect(() => {
     if (!scanning || !cameraActive) return;
@@ -136,7 +146,9 @@ export default function ScanQR() {
       };
       setScanHistory((prev) => {
         const next = [entry, ...prev.filter((h) => h.id !== data.id)].slice(0, 10);
-        sessionStorage.setItem('scanHistory', JSON.stringify(next));
+        if (campagneActive?.id) {
+          sessionStorage.setItem(`scanHistory_${campagneActive.id}`, JSON.stringify(next));
+        }
         return next;
       });
 
