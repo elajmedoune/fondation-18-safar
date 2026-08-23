@@ -2,6 +2,12 @@ import { supabase } from '../lib/supabaseClient.js';
 import { fetchAllPages } from '../lib/supabaseFetch.js';
 import { auditLogsService } from './auditLogs.service.js';
 
+// Désinfection de la saisie pour les filtres .or() de PostgREST :
+// les virgules/parenthèses sont des métacaractères de la syntaxe de filtre
+// (pas d'injection SQL possible — requêtes paramétrées — mais un utilisateur
+// pourrait sinon altérer la logique du filtre).
+const sanitizeSearch = (s) => s.replace(/[,()"*]/g, ' ').trim();
+
 export const membresService = {
   // IDs des comptes liés à un administrateur GLOBAL (campagne_id = null).
   // Ces comptes techniques ne sont PAS des membres de la fondation.
@@ -140,6 +146,8 @@ export const membresService = {
 
   async search(query, limit = 8) {
     if (!query || query.trim().length < 2) return [];
+    const term = sanitizeSearch(query);
+    if (term.length < 2) return [];
     const { data: adminRoles } = await supabase
       .from('user_roles')
       .select('user_id')
@@ -149,7 +157,7 @@ export const membresService = {
     let q = supabase
       .from('membres')
       .select('*')
-      .or(`numero_membre.ilike.%${query}%,nom.ilike.%${query}%,prenom.ilike.%${query}%,telephone.ilike.%${query}%`)
+      .or(`numero_membre.ilike.%${term}%,nom.ilike.%${term}%,prenom.ilike.%${term}%,telephone.ilike.%${term}%`)
       .limit(limit);
     if (excludeIds.length > 0) q = q.or(`user_id.is.null,user_id.not.in.(${excludeIds.join(',')})`);
     const { data, error } = await q;
@@ -163,7 +171,8 @@ export const membresService = {
   // exclue réellement les membres sans fiche dans cette campagne.
   async searchInCampagne(campagneId, query, limit = 8) {
     if (!campagneId || !query || query.trim().length < 2) return [];
-    const q = query.trim();
+    const q = sanitizeSearch(query);
+    if (q.length < 2) return [];
     const { data, error } = await supabase
       .from('membres')
       .select('id, nom, prenom, numero_membre, telephone, photo_url, campagne_membres!inner(fonction, statut)')
@@ -179,7 +188,8 @@ export const membresService = {
   // rattachés à la campagne active.
   async searchForGroupe(campagneId, query, limit = 10) {
     if (!campagneId || !query || query.trim().length < 2) return [];
-    const q = query.trim();
+    const q = sanitizeSearch(query);
+    if (q.length < 2) return [];
     const { data, error } = await supabase
       .from('membres')
       .select('id, nom, prenom, numero_membre, telephone, campagne_membres!inner(fonction)')
