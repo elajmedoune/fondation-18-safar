@@ -1,4 +1,4 @@
-Session   Erreur 400 trigger membre campagne Supabase
+  Session   Erreur 400 trigger membre campagne Supabase
   Continue  opencode -s ses_fd65d2a7affek1sdWqsovlyF0p
 
 hp@medoune:/mnt/c/Users/hp/fondation-18-safar$

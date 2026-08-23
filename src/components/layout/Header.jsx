@@ -21,7 +21,7 @@ export default function Header() {
           <Landmark size={16} />
         </div>
         <span className="font-bold text-primary-700 dark:text-primary-400 text-sm">
-          18 Safar
+          18 صفر
         </span>
       </Link>
 
