@@ -5,6 +5,7 @@ import { Plus, X, Pencil, Trash2, Users, UserCheck, Power, ChevronRight } from '
 import { useAuth } from '../../hooks/useAuth.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { groupesService } from '../../services/groupes.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
 const inputCls = "rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 w-full focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all";
@@ -42,8 +43,7 @@ export default function GroupesList() {
       await groupesService.create({ nom, description }, user.id, campagneActive.id);
       resetForm();
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ['groupes-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['groupes'] });
+      invalidateAll(queryClient);
     } catch (err) {
       setFeedback({ type: 'error', message: err.message });
     } finally {
@@ -59,8 +59,7 @@ export default function GroupesList() {
     setSaving(true);
     try {
       await groupesService.update(id, { nom: editNom, description: editDescription || null }, { userId: user.id, campagneId: campagneActive.id });
-      queryClient.invalidateQueries({ queryKey: ['groupes-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['groupes'] });
+      invalidateAll(queryClient);
       setEditId(null);
     } catch (err) {
       alert(err.message);
@@ -73,7 +72,7 @@ export default function GroupesList() {
     e.stopPropagation();
     try {
       await groupesService.update(g.id, { actif: !g.actif }, { userId: user.id, campagneId: campagneActive.id });
-      queryClient.invalidateQueries({ queryKey: ['groupes-stats'] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 
@@ -85,8 +84,7 @@ export default function GroupesList() {
     if (!confirm(confirmMsg)) return;
     try {
       await groupesService.remove(g.id, { userId: user.id, campagneId: campagneActive.id });
-      queryClient.invalidateQueries({ queryKey: ['groupes-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['groupes'] });
+      invalidateAll(queryClient);
     } catch (err) {
       alert("Suppression impossible : ce groupe a probablement des presences deja enregistrees. Desactive-le plutot.");
       console.error(err);

@@ -28,7 +28,7 @@ export default function MobileMenu({ open, onClose }) {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-700 text-white">
               <Landmark size={16} />
             </div>
-            <span className="font-semibold text-primary-700 dark:text-primary-400">18 Safar</span>
+            <span className="font-semibold text-primary-700 dark:text-primary-400">18 صفر</span>
           </div>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
             <X size={20} />

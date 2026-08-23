@@ -8,6 +8,7 @@ import { rolesService } from '../../services/roles.service.js';
 import { ROLES } from '../../constants/roles.js';
 import { supabase } from '../../lib/supabaseClient.js';
 import { invokeSafe } from '../../lib/invokeSafe.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 
 // Tous les rôles existants (affichage des badges)
 const ROLE_OPTIONS = [
@@ -77,6 +78,7 @@ export default function Utilisateurs() {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['user_roles'] });
     queryClient.invalidateQueries({ queryKey: ['comptes'] });
+    invalidateAll(queryClient);
   };
 
   const { data: groupes = [] } = useQuery({
@@ -144,8 +146,7 @@ export default function Utilisateurs() {
       if (data?.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: `Invitation envoyée à ${accEmail}.` });
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ['user_roles'] });
-      queryClient.invalidateQueries({ queryKey: ['comptes'] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Erreur lors de la création.' });
@@ -157,8 +158,7 @@ export default function Utilisateurs() {
   const handleRemoveRole = async (id, membreNom) => {
     if (!confirm(`Retirer ce role a ${membreNom || 'cet utilisateur'} ? Il ne pourra plus se connecter a l'application.`)) return;
     await rolesService.remove(id, { userId: currentUser.id, campagneId: campagneActive?.id || null });
-    queryClient.invalidateQueries({ queryKey: ['user_roles'] });
-    queryClient.invalidateQueries({ queryKey: ['comptes'] });
+    invalidateAll(queryClient);
   };
 
   const handleToggleBan = async (targetUserId, ban) => {
@@ -167,7 +167,7 @@ export default function Utilisateurs() {
       const { data, error } = await invokeSafe('toggle-user-ban', { body: { target_user_id: targetUserId, ban } });
       if (error) throw new Error(await extractErrorMessage(error));
       if (data?.error) throw new Error(data.error);
-      queryClient.invalidateQueries({ queryKey: ['comptes'] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

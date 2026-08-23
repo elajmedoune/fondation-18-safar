@@ -5,6 +5,7 @@ import { ArrowLeft, FileDown, FileSpreadsheet, UserPlus, X, Search } from 'lucid
 import { useAuth } from '../../hooks/useAuth.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { groupesService } from '../../services/groupes.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import { membresService } from '../../services/membres.service.js';
 
 const selectCls = "w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
@@ -44,8 +45,7 @@ export default function GroupeDetail() {
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['groupe-detail', id] });
-    queryClient.invalidateQueries({ queryKey: ['groupes-stats'] });
+    invalidateAll(queryClient);
   };
 
   const handleAddResponsable = async (e) => {

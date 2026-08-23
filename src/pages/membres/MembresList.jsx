@@ -6,6 +6,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import { supabase } from '../../lib/supabaseClient.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -195,7 +196,7 @@ export default function MembresList() {
       );
       setFeedback({ type: 'success', message: `Membre ${mPrenom} ${mNom} créé.` });
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ['membres-liste', campagneActive?.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Erreur lors de la création.' });

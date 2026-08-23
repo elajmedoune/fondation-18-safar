@@ -5,6 +5,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { donsService } from '../../services/dons.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import ExportMenu from '../../components/ui/ExportMenu.jsx';
@@ -87,8 +88,7 @@ export default function Dons() {
       await donsService.create({ campagneId: campagneActive.id, type, donateurNom, donateurTelephone, montant: Number(montant), campagneActivite: '', note, userId: user.id });
       setFeedback({ type: 'success', message: `Don de ${formatFCFA(montant)} enregistre.` });
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ['dons', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['dons-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
@@ -116,8 +116,7 @@ export default function Dons() {
         note: editNote
       }, { userId: user.id });
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ['dons', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['dons-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
     finally { setSavingEdit(false); }
   };
@@ -126,8 +125,7 @@ export default function Dons() {
     if (!confirm('Supprimer ce don ?')) return;
     try {
       await donsService.remove(id, campagneActive.id, { userId: user.id });
-      queryClient.invalidateQueries({ queryKey: ['dons', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['dons-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

@@ -7,6 +7,7 @@ import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { collecteursService } from '../../services/collecteurs.service.js';
 import { quetesService } from '../../services/quetes.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import ExportMenu from '../../components/ui/ExportMenu.jsx';
@@ -100,8 +101,7 @@ export default function Quetes() {
       await quetesService.create({ campagneId: campagneActive.id, collecteurId: collecteur.id, lieu, montant: Number(montant), note, userId: user.id });
       setFeedback({ type: 'success', message: `Quete de ${formatFCFA(montant)} enregistree pour ${lieu}.` });
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ['quetes', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['quetes-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
@@ -116,8 +116,7 @@ export default function Quetes() {
     try {
       await quetesService.update(id, campagneActive.id, { lieu: editLieu.trim(), montant: Number(editMontant), note: editNote }, { userId: user.id });
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ['quetes', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['quetes-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
     finally { setSavingEdit(false); }
   };
@@ -126,8 +125,7 @@ export default function Quetes() {
     if (!confirm('Supprimer cette quête ?')) return;
     try {
       await quetesService.remove(id, campagneActive.id, { userId: user.id });
-      queryClient.invalidateQueries({ queryKey: ['quetes', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['quetes-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

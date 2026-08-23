@@ -5,6 +5,7 @@ import { FileDown, Wallet, Calendar, Pencil, X } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { membresService } from '../../services/membres.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { supabase } from '../../lib/supabaseClient.js';
 import BackButton from '../../components/ui/BackButton.jsx';
@@ -161,6 +162,7 @@ export default function MembreProfil() {
         queryClient.invalidateQueries({ queryKey: ['membre-fiche', id, campagneActive?.id] }),
         queryClient.invalidateQueries({ queryKey: ['membres-liste', campagneActive?.id] }),
       ]);
+      invalidateAll(queryClient);
       setEditing(false);
       setFeedback({ type: 'success', message: 'Modifications enregistrées.' });
     } catch (err) {

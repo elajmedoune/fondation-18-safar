@@ -11,14 +11,22 @@ const sanitizeSearch = (s) => s.replace(/[,()"*]/g, ' ').trim();
 export const membresService = {
   // IDs des comptes liés à un administrateur GLOBAL (campagne_id = null).
   // Ces comptes techniques ne sont PAS des membres de la fondation.
+  // Cache 60 s : appelé à CHAQUE scan, la requête ne doit pas pénaliser
+  // la latence de détection (la liste des admins change très rarement).
   async getGlobalAdminUserIds() {
+    const now = Date.now();
+    if (membresService._adminIdsCache && now - membresService._adminIdsCache.at < 60000) {
+      return membresService._adminIdsCache.ids;
+    }
     const { data, error } = await supabase
       .from('user_roles')
       .select('user_id')
       .eq('role', 'administrateur')
       .is('campagne_id', null);
     if (error) throw error;
-    return new Set((data || []).map((r) => r.user_id));
+    const ids = new Set((data || []).map((r) => r.user_id));
+    membresService._adminIdsCache = { at: now, ids };
+    return ids;
   },
 
   // Nombre EXACT de membres de la CAMPAGNE : lignes campagne_membres de
@@ -107,15 +115,14 @@ export const membresService = {
   // campagne est "introuvable"). Les comptes liés à un admin global ne sont
   // pas reconnus.
   async getFicheByQrCode(qrValue, campagneId) {
-    const { data: membre, error } = await supabase
-      .from('membres')
-      .select('*')
-      .eq('qr_code_value', qrValue)
-      .maybeSingle();
+    // Recherche membre + cache admins EN PARALLÈLE : une seule attente réseau
+    const [{ data: membre, error }, adminIds] = await Promise.all([
+      supabase.from('membres').select('*').eq('qr_code_value', qrValue).maybeSingle(),
+      this.getGlobalAdminUserIds(),
+    ]);
     if (error) throw error;
     if (!membre) return null;
 
-    const adminIds = await this.getGlobalAdminUserIds();
     if (membre.user_id && adminIds.has(membre.user_id)) return null;
 
     // La fiche dans la campagne active est OBLIGATOIRE : sans elle, on refuse

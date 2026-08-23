@@ -89,9 +89,7 @@ export default function Cotisations() {
 
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['cotisations', ca.id] });
-    queryClient.invalidateQueries({ queryKey: ['cotisations-total', ca.id] });
-    queryClient.invalidateQueries({ queryKey: ['cotisations-all', ca.id] });
+    invalidateAll(queryClient);
   };
 
   const { data: cotisations = [], isLoading: loadingList } = useQuery({

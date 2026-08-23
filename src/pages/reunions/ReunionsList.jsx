@@ -6,6 +6,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { reunionsService } from '../../services/reunions.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
@@ -62,7 +63,7 @@ export default function ReunionsList() {
       setFeedback({ type: 'success', message: 'Réunion créée.' });
       resetForm();
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ['reunions', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Erreur.' });
@@ -73,7 +74,7 @@ export default function ReunionsList() {
     if (!confirm('Supprimer cette réunion et toutes ses présences ?')) return;
     try {
       await reunionsService.remove(id, { userId: user.id, campagneId: campagneActive.id });
-      queryClient.invalidateQueries({ queryKey: ['reunions', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

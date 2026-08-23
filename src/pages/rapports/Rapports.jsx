@@ -5,6 +5,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { rapportsService } from '../../services/rapports.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
@@ -93,7 +94,7 @@ export default function Rapports() {
       setFeedback({ type: 'success', message: 'Rapport créé.' });
       resetForm();
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ['rapports', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Erreur.' });
@@ -110,7 +111,7 @@ export default function Rapports() {
     try {
       await rapportsService.update(id, campagneActive.id, { contenu: editContenu || null });
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ['rapports', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
     finally { setSavingEdit(false); }
   };
@@ -119,7 +120,7 @@ export default function Rapports() {
     if (!confirm('Supprimer ce rapport ?')) return;
     try {
       await rapportsService.remove(id, campagneActive.id);
-      queryClient.invalidateQueries({ queryKey: ['rapports', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

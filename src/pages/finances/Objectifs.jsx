@@ -6,6 +6,7 @@ import { objectifsService } from '../../services/objectifs.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { donsService } from '../../services/dons.service.js';
 import { quetesService } from '../../services/quetes.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 
 function formatFCFA(n) {
@@ -78,7 +79,7 @@ export default function Objectifs() {
       setFeedback({ type: 'success', message: 'Objectif enregistré.' });
       setMontantCible('');
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ['objectifs', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       const msg = err.code === '23505'
@@ -96,7 +97,7 @@ export default function Objectifs() {
       await objectifsService.update(id, campagneActive.id, { montantCible: Number(editMontant) });
       setEditingId(null);
       setEditMontant('');
-      queryClient.invalidateQueries({ queryKey: ['objectifs', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
     }
@@ -106,7 +107,7 @@ export default function Objectifs() {
     if (!confirm('Supprimer cet objectif ?')) return;
     try {
       await objectifsService.remove(id, campagneActive.id);
-      queryClient.invalidateQueries({ queryKey: ['objectifs', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
     }

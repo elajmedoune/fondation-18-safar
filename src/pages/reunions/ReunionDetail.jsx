@@ -6,6 +6,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { reunionsService } from '../../services/reunions.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import { membresService } from '../../services/membres.service.js';
 import BackButton from '../../components/ui/BackButton.jsx';
 
@@ -86,8 +87,7 @@ export default function ReunionDetail() {
   }, [fichesCampagne, reunion?.reunion_participants]);
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['reunion-detail', id] });
-    queryClient.invalidateQueries({ queryKey: ['reunions', campagneActive?.id] });
+    invalidateAll(queryClient);
   };
 
   const startEditInfo = () => {

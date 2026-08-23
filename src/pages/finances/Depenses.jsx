@@ -5,6 +5,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { depensesService } from '../../services/depenses.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import { objectifsService } from '../../services/objectifs.service.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -99,8 +100,7 @@ export default function Depenses() {
       setFeedback({ type: 'success', message: `Dépense de ${formatFCFA(montant)} enregistrée.` });
       resetForm();
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ['depenses', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['depenses-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
@@ -126,8 +126,7 @@ export default function Depenses() {
     try {
       await depensesService.update(id, { categorie: editCategorie, montant: Number(editMontant), description: editDescription || null }, { userId: user.id, campagneId: campagneActive.id });
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ['depenses', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['depenses-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
     finally { setSavingEdit(false); }
   };
@@ -136,8 +135,7 @@ export default function Depenses() {
     if (!confirm('Supprimer cette dépense ?')) return;
     try {
       await depensesService.remove(id, { userId: user.id, campagneId: campagneActive.id });
-      queryClient.invalidateQueries({ queryKey: ['depenses', campagneActive.id] });
-      queryClient.invalidateQueries({ queryKey: ['depenses-total', campagneActive.id] });
+      invalidateAll(queryClient);
     } catch (err) { alert(err.message); }
   };
 

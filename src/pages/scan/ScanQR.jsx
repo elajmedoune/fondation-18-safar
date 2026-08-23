@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { QrCode as QrCodeIcon, User, Wallet, Eye, Link2, Clock, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
-import { BrowserQRCodeReader } from '@zxing/browser';
+import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -98,7 +99,12 @@ export default function ScanQR() {
 
   useEffect(() => {
     if (!scanning || !cameraActive) return;
-    const reader = new BrowserQRCodeReader();
+    // Décodeur moderne + hints QR : nettement plus rapide et fiable que
+    // l'ancien BrowserQRCodeReader (cadence de détection plus élevée).
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    const reader = new BrowserMultiFormatReader(hints);
     let cancelled = false;
 
     reader
