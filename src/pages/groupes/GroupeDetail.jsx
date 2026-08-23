@@ -112,7 +112,22 @@ export default function GroupeDetail() {
 
   if (!campagneActive) return <p className="text-sm text-gray-500 p-4">Aucune campagne active.</p>;
   if (isLoading) return <p className="text-sm text-gray-500 p-4">Chargement...</p>;
-  if (error) return <p className="text-sm text-red-600 p-4">Erreur : {error.message}</p>;
+  if (error) {
+    const introuvable = error.message?.includes('introuvable');
+    return (
+      <div className="p-4 space-y-3">
+        <p className="text-sm text-red-600">Erreur : {error.message}</p>
+        {introuvable && (
+          <p className="text-sm text-gray-500">
+            Ce groupe appartient à une autre campagne.{' '}
+            <Link to="/groupes" className="text-primary-700 dark:text-primary-400 underline">
+              Retour à la liste des groupes
+            </Link>
+          </p>
+        )}
+      </div>
+    );
+  }
   if (!groupe) return <p className="text-sm text-gray-500 p-4">Groupe introuvable.</p>;
 
   const responsableIds = new Set(groupe.responsables.map((r) => r.membre.id));

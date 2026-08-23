@@ -63,6 +63,15 @@ Deno.serve(async (req) => {
     if (!email || !role) {
       return json({ error: 'Email et rôle requis' }, 400);
     }
+    // L'app ne distribue que des rôles BUREAU, rattachés à la campagne.
+    // - Les membres SIMPLES n'ont pas de compte (pas d'accès à l'app)
+    // - Les comptes ADMINISTRATEURS se créent directement dans Supabase
+    const ALLOWED_ROLES = ['president', 'secretaire', 'tresorier'];
+    if (!ALLOWED_ROLES.includes(role)) {
+      return json({
+        error: "Rôle non autorisé : seuls président, secrétaire et trésorier peuvent être attribués depuis l'application"
+      }, 400);
+    }
     if (!sans_profil_membre && !existing_membre_id && (!nom || !prenom)) {
       return json({ error: 'Nom et prénom requis pour créer une nouvelle fiche membre' }, 400);
     }

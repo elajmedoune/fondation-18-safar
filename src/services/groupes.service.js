@@ -8,7 +8,7 @@ export const groupesService = {
   // Les comptes liés à un admin global sont exclus : ils ne font pas partie des membres.
   async getAllWithStats(campagneId) {
     const [{ data: groupes, error }, adminIds] = await Promise.all([
-      supabase.from('groupes').select('*').order('nom'),
+      supabase.from('groupes').select('*').eq('campagne_id', campagneId).order('nom'),
       membresService.getGlobalAdminUserIds(),
     ]);
     if (error) throw error;
@@ -52,10 +52,11 @@ export const groupesService = {
   // Les comptes liés à un admin global sont exclus des deux listes.
   async getDetail(groupeId, campagneId) {
     const [{ data: groupe, error }, adminIds] = await Promise.all([
-      supabase.from('groupes').select('*').eq('id', groupeId).single(),
+      supabase.from('groupes').select('*').eq('id', groupeId).eq('campagne_id', campagneId).maybeSingle(),
       membresService.getGlobalAdminUserIds(),
     ]);
     if (error) throw error;
+    if (!groupe) throw new Error('Groupe introuvable dans cette campagne (lien obsolète ?).');
 
     const [membresRes, responsablesRes] = await Promise.all([
       supabase
@@ -79,9 +80,11 @@ export const groupesService = {
   },
 
   async create({ nom, description }, userId, campagneId) {
+    // Un groupe appartient TOUJOURS à une campagne
+    if (!campagneId) throw new Error("Impossible de créer un groupe hors campagne. Sélectionnez d'abord une campagne active.");
     const { data, error } = await supabase
       .from('groupes')
-      .insert({ nom, description: description || null })
+      .insert({ campagne_id: campagneId, nom, description: description || null })
       .select()
       .single();
     if (error) throw error;
@@ -97,10 +100,16 @@ export const groupesService = {
   async update(id, patch, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('groupes').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('groupes').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
-    const { data, error } = await supabase.from('groupes').update(patch).eq('id', id).select().single();
+    const { data, error } = await supabase
+      .from('groupes')
+      .update(patch)
+      .eq('id', id)
+      .eq('campagne_id', campagneId)
+      .select()
+      .single();
     if (error) throw error;
     if (userId) {
       await auditLogsService.log({
@@ -114,7 +123,7 @@ export const groupesService = {
   async remove(id, { userId, campagneId } = {}) {
     let oldData = null;
     if (userId) {
-      const { data: before } = await supabase.from('groupes').select('*').eq('id', id).single();
+      const { data: before } = await supabase.from('groupes').select('*').eq('id', id).eq('campagne_id', campagneId).maybeSingle();
       oldData = before;
     }
     // Détacher les membres UNIQUEMENT pour la campagne active
@@ -125,7 +134,7 @@ export const groupesService = {
       .eq('campagne_id', campagneId);
     if (detachErr) throw detachErr;
 
-    const { error } = await supabase.from('groupes').delete().eq('id', id);
+    const { error } = await supabase.from('groupes').delete().eq('id', id).eq('campagne_id', campagneId);
     if (error) throw error;
     if (userId) {
       await auditLogsService.log({

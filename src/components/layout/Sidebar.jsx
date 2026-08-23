@@ -6,7 +6,8 @@ import { ICONS } from './icons.js';
 
 export default function Sidebar() {
   const { roleNamesActifs } = useRole();
-  const items = getSidebarItems(roleNamesActifs.length ? roleNamesActifs : ['membre']);
+  // Pas de repli "membre" : l'app est réservée au bureau (ProtectedRoute).
+  const items = getSidebarItems(roleNamesActifs);
 
   return (
     <aside className="hidden md:flex md:flex-col md:w-48 shrink-0 h-full border-r border-gray-200/70 dark:border-gray-800 bg-white/50 dark:bg-gray-950/50">

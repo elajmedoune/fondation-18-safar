@@ -89,9 +89,10 @@ export default function MembresList() {
   });
 
   const { data: groupes = [] } = useQuery({
-    queryKey: ['groupes'],
+    queryKey: ['groupes', campagneActive?.id],
+    enabled: !!campagneActive?.id,
     queryFn: async () => {
-      const { data, error } = await supabase.from('groupes').select('*').order('nom');
+      const { data, error } = await supabase.from('groupes').select('*').eq('campagne_id', campagneActive.id).order('nom');
       if (error) throw error;
       return data;
     }

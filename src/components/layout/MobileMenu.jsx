@@ -6,7 +6,8 @@ import { ICONS } from './icons.js';
 
 export default function MobileMenu({ open, onClose }) {
   const { rolePrincipal } = useRole();
-  const items = NAV_ITEMS[rolePrincipal] || NAV_ITEMS.membre;
+  // Pas de repli "membre" : l'app est réservée au bureau (ProtectedRoute).
+  const items = NAV_ITEMS[rolePrincipal] || [];
 
   return (
     <>

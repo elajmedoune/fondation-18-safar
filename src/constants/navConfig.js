@@ -1,11 +1,8 @@
 import { ROLES } from './roles.js';
 
+// NB : pas de menu "membre" — l'app est réservée au bureau et à l'admin
+// (voir APP_ACCESS_ROLES dans ProtectedRoute).
 export const NAV_ITEMS = {
-  [ROLES.MEMBRE]: [
-    { label: 'Accueil', to: '/tableau-de-bord', icon: 'Home' },
-    { label: 'Ma carte', to: '/ma-carte', icon: 'CreditCard' },
-    { label: 'Réunions', to: '/reunions', icon: 'Calendar' }
-  ],
   [ROLES.TRESORIER]: [
     { label: 'Accueil', to: '/tableau-de-bord', icon: 'Home' },
     { label: 'Scan', to: '/scan', icon: 'QrCode' },
@@ -67,7 +64,6 @@ export function getSidebarItems(userRoles = []) {
 }
 // Action principale par rôle, affichée seule dans la bottom nav mobile.
 export const PRIMARY_ACTION = {
-  [ROLES.MEMBRE]: { label: 'Ma carte', to: '/ma-carte', icon: 'CreditCard' },
   [ROLES.TRESORIER]: { label: 'Scan', to: '/scan', icon: 'QrCode' },
   [ROLES.SECRETAIRE]: { label: 'Réunions', to: '/reunions', icon: 'Calendar' },
   [ROLES.PRESIDENT]: { label: 'Réunions', to: '/reunions', icon: 'Calendar' },

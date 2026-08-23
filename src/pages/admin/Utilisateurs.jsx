@@ -80,25 +80,31 @@ export default function Utilisateurs() {
   };
 
   const { data: groupes = [] } = useQuery({
-    queryKey: ['groupes'],
+    queryKey: ['groupes', campagneActive?.id],
+    enabled: !!campagneActive?.id,
     queryFn: async () => {
-      const { data, error } = await supabase.from('groupes').select('*').order('nom');
+      const { data, error } = await supabase.from('groupes').select('*').eq('campagne_id', campagneActive.id).order('nom');
       if (error) throw error;
       return data;
     }
   });
 
   const { data: roles = [] } = useQuery({
-    queryKey: ['user_roles'],
-    queryFn: () => rolesService.listWithMembre()
+    queryKey: ['user_roles', campagneActive?.id],
+    enabled: !!campagneActive?.id,
+    queryFn: async () => {
+      const all = await rolesService.listWithMembre();
+      // ISOLEMENT : en campagne B, on ne montre que les rôles de B (+ admins globaux)
+      return all.filter((r) => r.campagne_id === campagneActive.id || r.role === ROLES.ADMINISTRATEUR);
+    }
   });
 
   const isAdmin = roles.some((r) => r.user_id === currentUser.id && r.role === ROLES.ADMINISTRATEUR);
 
   const { data: comptes = [], isLoading: loadingComptes, isError: erreurComptes, refetch: refetchComptes } = useQuery({
-    queryKey: ['comptes'],
+    queryKey: ['comptes', campagneActive?.id],
     queryFn: async () => {
-      const { data, error } = await invokeSafe('list-users');
+      const { data, error } = await invokeSafe('list-users', { body: { campagne_id: campagneActive.id } });
       if (error) throw new Error(await extractErrorMessage(error));
       return data.users;
     },

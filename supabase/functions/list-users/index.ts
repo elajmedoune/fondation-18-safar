@@ -61,17 +61,36 @@ Deno.serve(async (req) => {
 
     const users = authList?.users || [];
 
+    // ISOLEMENT PAR CAMPAGNE : on ne retourne que les comptes ayant un rôle
+    // dans la campagne demandée (+ les administrateurs globaux). Un président
+    // ou admin de la campagne B ne voit PAS les comptes/bureau de la A.
+    let requestedCampagneId = null;
+    try {
+      const body = await req.json();
+      requestedCampagneId = body?.campagne_id || null;
+    } catch {
+      // pas de corps JSON -> on garde le comportement filtré minimal
+    }
+
     const { data: membres } = await supabaseAdmin.from('membres').select('*');
     const { data: roles } = await supabaseAdmin.from('user_roles').select('*, groupe:groupes(nom)');
 
-    const result = users.map((u) => ({
-      id: u.id,
-      email: u.email,
-      created_at: u.created_at,
-      banned: !!u.banned_until && new Date(u.banned_until) > new Date(),
-      membre: membres?.find((m) => m.user_id === u.id) || null,
-      roles: roles?.filter((r) => r.user_id === u.id) || []
-    }));
+    const visibleRoles = (userId) => {
+      const own = roles?.filter((r) => r.user_id === userId) || [];
+      if (!requestedCampagneId) return own.filter((r) => r.role === 'administrateur');
+      return own.filter((r) => r.campagne_id === requestedCampagneId || r.role === 'administrateur');
+    };
+
+    const result = users
+      .map((u) => ({
+        id: u.id,
+        email: u.email,
+        created_at: u.created_at,
+        banned: !!u.banned_until && new Date(u.banned_until) > new Date(),
+        membre: membres?.find((m) => m.user_id === u.id) || null,
+        roles: visibleRoles(u.id)
+      }))
+      .filter((u) => u.roles.length > 0);
 
     return new Response(JSON.stringify({ users: result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
