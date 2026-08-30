@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { QrCode as QrCodeIcon, User, Wallet, Eye, Link2, Clock, CheckCircle2, AlertCircle, RefreshCw, Flashlight, FlashlightOff, Camera, Loader2 } from 'lucide-react';
+import { QrCode as QrCodeIcon, User, Wallet, Eye, Link2, Clock, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Link } from 'react-router-dom';
@@ -69,15 +69,6 @@ export default function ScanQR() {
   const [lookupError, setLookupError] = useState(null);
   const [cotisationsHistory, setCotisationsHistory] = useState([]);
 
-  // --- Flash (lampe torche) pour scanner dans l'obscurité ---
-  const [torchOn, setTorchOn] = useState(false);
-  const [torchAvailable, setTorchAvailable] = useState(false);
-
-  // --- Mode sombre : ouvre l'appareil photo natif (flash système fiable sur
-  // Android ET iPhone) puis analyse la photo du QR pris. ---
-  const photoQrInputRef = useRef(null);
-  const [photoQrBusy, setPhotoQrBusy] = useState(false);
-
   const peutEncaisser = hasRole(['tresorier', 'president', 'administrateur']);
   const peutVoirFiche = hasRole(['tresorier', 'president', 'administrateur', 'secretaire']);
 
@@ -124,14 +115,6 @@ export default function ScanQR() {
         setScanning(false);
         handleDetected(result.getText());
       })
-      .then((controls) => {
-        // controls est disponible seulement ici (promesse résolue) : on détecte
-        // si le flash (switchTorch) est supporté par cet appareil.
-        controlsRef.current = controls;
-        if (typeof controls.switchTorch === 'function') {
-          setTorchAvailable(true);
-        }
-      })
       .catch((err) => {
         console.error(err);
         setCameraError("Impossible d'accéder à la caméra. Vérifie les autorisations du navigateur.");
@@ -139,91 +122,10 @@ export default function ScanQR() {
 
     return () => {
       cancelled = true;
-      // Éteindre le flash quand on coupe le scan (évite de laisser la lampe allumée)
-      if (controlsRef.current?.switchTorch) {
-        controlsRef.current.switchTorch(false).catch(() => {});
-      }
-      setTorchOn(false);
-      setTorchAvailable(false);
       controlsRef.current?.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanning, cameraActive]);
-
-  const toggleTorch = async () => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-    const next = !torchOn;
-
-    // Le flash se contrôle via applyConstraints() sur le track vidéo.
-    // Certains navigateurs (Android Chrome, une partie de iOS PWA) exigent
-    // fillLightMode en plus de torch pour déclencher réellement la LED.
-    // On préfère streamVideoConstraintsApply (présent sur les contrôles
-    // zxing) qui appelle applyConstraints directement sur les tracks.
-    try {
-      if (typeof controls.streamVideoConstraintsApply === 'function') {
-        await controls.streamVideoConstraintsApply({
-          advanced: [{
-            torch: next,
-            fillLightMode: next ? 'torch' : 'off',
-          }],
-        });
-        setTorchOn(next);
-        return;
-      }
-      if (typeof controls.switchTorch === 'function') {
-        await controls.switchTorch(next);
-        setTorchOn(next);
-        return;
-      }
-      alert("Le flash n'est pas disponible sur cet appareil.");
-    } catch (err) {
-      console.error(err);
-      // Certains navigateurs rejettent fillLightMode mais acceptent torch seul
-      try {
-        if (typeof controls.streamVideoConstraintsApply === 'function') {
-          await controls.streamVideoConstraintsApply({ advanced: [{ torch: next }] });
-          setTorchOn(next);
-          return;
-        }
-        await controls.switchTorch(next);
-        setTorchOn(next);
-      } catch (err2) {
-        console.error(err2);
-        alert("Impossible d'activer le flash sur cet appareil.");
-      }
-    }
-  };
-
-  // Ouvre l'appareil photo natif (avec son vrai flash, utilisable en sombre sur
-  // Android et iPhone) puis scanne la photo du QR prise par le système.
-  const activatePhotoQrMode = () => {
-    // Détection iOS : sur iPhone, l'input capture=environment ouvre l'appareil
-    // photo natif qui possède un flash système réglable par l'utilisateur.
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    photoQrInputRef.current?.setAttribute('capture', isIOS ? 'user' : 'environment');
-    photoQrInputRef.current?.click();
-  };
-
-  const handlePhotoQrChange = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setPhotoQrBusy(true);
-    try {
-      const url = URL.createObjectURL(file);
-      const reader = new BrowserMultiFormatReader();
-      const result = await reader.decodeFromImageUrl(url);
-      URL.revokeObjectURL(url);
-      handleDetected(result.getText());
-    } catch (err) {
-      console.error(err);
-      alert("Aucun QR code détecté sur cette photo. Assurez-vous que le code est bien net.");
-    } finally {
-      setPhotoQrBusy(false);
-    }
-  };
 
   const handleDetected = async (qrValue) => {
     setLookupError(null);
@@ -333,40 +235,6 @@ export default function ScanQR() {
             {cameraActive ? (
               <div className="relative aspect-square bg-black">
                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
-                {/* Flash toggle */}
-                {torchAvailable && (
-                  <button
-                    type="button"
-                    onClick={toggleTorch}
-                    title={torchOn ? 'Éteindre le flash' : 'Allumer le flash'}
-                    className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
-                      torchOn
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-white/90 text-gray-700 hover:bg-white'
-                    }`}
-                  >
-                    {torchOn ? <FlashlightOff className="h-5 w-5" /> : <Flashlight className="h-5 w-5" />}
-                  </button>
-                )}
-                {/* Mode sombre : ouvre l'appareil photo natif (flash fiable sur
-                    Android et iPhone) pour photographier le QR */}
-                <button
-                  type="button"
-                  onClick={activatePhotoQrMode}
-                  disabled={photoQrBusy}
-                  title="Mode sombre : ouvrir l'appareil photo natif avec flash"
-                  className="absolute bottom-3 right-16 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-gray-700 shadow-lg hover:bg-white disabled:opacity-60 transition-colors"
-                >
-                  {photoQrBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
-                </button>
-                <input
-                  ref={photoQrInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handlePhotoQrChange}
-                />
                 {/* Scanning overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-48 h-48 border-2 border-white/40 rounded-2xl">
