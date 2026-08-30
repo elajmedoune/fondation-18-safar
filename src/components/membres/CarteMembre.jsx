@@ -22,6 +22,15 @@ function loadImg(src) {
   });
 }
 
+// Ajoute un paramètre unique à l'URL pour forcer le navigateur à re-télécharger
+// l'image au lieu de servir l'ancienne mise en cache. Indispensable quand la
+// photo est ré-uploadée au même chemin (même URL).
+function bustCache(url, rev = 0) {
+  if (!url) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}t=${Date.now()}-${rev}`;
+}
+
 function coverDraw(ctx, img, x, y, w, h) {
   const imgRatio = img.width / img.height;
   const boxRatio = w / h;
@@ -294,14 +303,14 @@ async function drawCard({ ctx, photoImg, logoImg, qrImg, membre, groupeNom, fonc
 }
 
 // Charge toutes les images nécessaires (photo, logo, QR)
-async function loadAssets(membre) {
+async function loadAssets(photoUrl, qrCodeValue, photoRev) {
   const [photoImg, logoImg] = await Promise.all([
-    membre.photo_url ? loadImg(membre.photo_url).catch(() => null) : null,
+    photoUrl ? loadImg(bustCache(photoUrl, photoRev)).catch(() => null) : null,
     loadImg('/logo-transparent.png').catch(() => null)
   ]);
   let qrImg = null;
   try {
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(membre.qr_code_value)}&size=${200}x${200}&format=png`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrCodeValue)}&size=${200}x${200}&format=png`;
     qrImg = await loadImg(qrUrl);
   } catch {}
   return { photoImg, logoImg, qrImg };
@@ -312,6 +321,17 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [cardUrl, setCardUrl] = useState(null);
+  // Copie locale de l'URL photo : mise à jour immédiatement après un import,
+  // même si la prop membre ne change pas (page "Ma carte").
+  const [photoUrl, setPhotoUrl] = useState(membre?.photo_url || null);
+  // Incrémenté à chaque import pour forcer la régénération de la carte même si
+  // l'URL est identique (ré-upload au même chemin).
+  const [photoRev, setPhotoRev] = useState(0);
+
+  // Synchronise l'état local quand la prop (ou une autre source) change l'URL
+  useEffect(() => {
+    setPhotoUrl(membre?.photo_url || null);
+  }, [membre?.photo_url]);
 
   if (!membre) return null;
 
@@ -325,6 +345,8 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
     try {
       const photo_url = await membresService.uploadPhoto(file, membre.id);
       await membresService.update(membre.id, { photo_url });
+      setPhotoUrl(photo_url);
+      setPhotoRev((v) => v + 1);
       onPhotoUpdated?.(membre.id, photo_url);
     } catch (err) {
       console.error(err);
@@ -338,7 +360,7 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const assets = await loadAssets(membre);
+      const assets = await loadAssets(photoUrl, membre.qr_code_value, photoRev);
       if (cancelled) return;
       const c = document.createElement('canvas');
       c.width = CARD_WIDTH;
@@ -348,12 +370,12 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
       if (!cancelled) setCardUrl(c.toDataURL('image/png'));
     })();
     return () => { cancelled = true; };
-  }, [membre, groupeNom, fonction, annee]);
+  }, [photoUrl, photoRev, membre, groupeNom, fonction, annee]);
 
   const handleExportPng = async () => {
     setExporting(true);
     try {
-      const assets = await loadAssets(membre);
+      const assets = await loadAssets(photoUrl, membre.qr_code_value, photoRev);
       const c = document.createElement('canvas');
       c.width = CARD_WIDTH * EXPORT_SCALE;
       c.height = CARD_HEIGHT * EXPORT_SCALE;
