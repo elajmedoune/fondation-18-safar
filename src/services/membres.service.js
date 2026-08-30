@@ -1,12 +1,40 @@
 import { supabase } from '../lib/supabaseClient.js';
 import { fetchAllPages } from '../lib/supabaseFetch.js';
 import { auditLogsService } from './auditLogs.service.js';
+import heic2any from 'heic2any';
 
 // Désinfection de la saisie pour les filtres .or() de PostgREST :
 // les virgules/parenthèses sont des métacaractères de la syntaxe de filtre
 // (pas d'injection SQL possible — requêtes paramétrées — mais un utilisateur
 // pourrait sinon altérer la logique du filtre).
 const sanitizeSearch = (s) => s.replace(/[,()"*]/g, ' ').trim();
+
+// Convertit une image en JPEG recompressé (via canvas) pour un affichage
+// universel dans <img> sur tous les navigateurs.
+async function photoToJpeg(file, maxSide = 1600) {
+  // HEIC (photos iPhone modifiées/exportées) : non décodable par le canvas
+  // sous Chrome/Android. heic2any le convertit en JPEG d'abord.
+  const isHeic = /image\/heic|heif/i.test(file.type || file.name || '');
+  if (isHeic) {
+    const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+    const blobs = Array.isArray(out) ? out : [out];
+    file = new File(blobs, 'photo.jpg', { type: 'image/jpeg' });
+  }
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encoding'))), 'image/jpeg', 0.9);
+  });
+  return new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+}
 
 export const membresService = {
   // IDs des comptes liés à un administrateur GLOBAL (campagne_id = null).
@@ -239,9 +267,22 @@ export const membresService = {
   },
 
   async uploadPhoto(file, membreId) {
-    const ext = file.name.split('.').pop();
+    // Convertit l'image en JPEG recompressé via canvas pour garantir un
+    // affichage universel (gère PNG/WebP/GIF… et la plupart des captures).
+    // HEIC (iPhone) n'est pas lisible par tous les navigateurs : si la
+    // conversion échoue, on tente l'upload brut du fichier d'origine.
+    let uploadFile = file;
+    try {
+      uploadFile = await photoToJpeg(file);
+    } catch (err) {
+      // image illisible (ex. HEIC sous Chrome) : on garde le fichier d'origine
+    }
+    const ext = 'jpg';
     const path = `${membreId || 'temp-' + Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('membres-photos').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('membres-photos').upload(path, uploadFile, {
+      upsert: true,
+      contentType: uploadFile.type || 'image/jpeg',
+    });
     if (error) throw error;
     const { data } = supabase.storage.from('membres-photos').getPublicUrl(path);
     return data.publicUrl;
