@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { QrCode as QrCodeIcon, User, Wallet, Eye, Link2, Clock, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { QrCode as QrCodeIcon, User, Wallet, Eye, Link2, Clock, CheckCircle2, AlertCircle, RefreshCw, Flashlight, FlashlightOff } from 'lucide-react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Link } from 'react-router-dom';
@@ -69,6 +69,10 @@ export default function ScanQR() {
   const [lookupError, setLookupError] = useState(null);
   const [cotisationsHistory, setCotisationsHistory] = useState([]);
 
+  // --- Flash (lampe torche) pour scanner dans l'obscurité ---
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchAvailable, setTorchAvailable] = useState(false);
+
   const peutEncaisser = hasRole(['tresorier', 'president', 'administrateur']);
   const peutVoirFiche = hasRole(['tresorier', 'president', 'administrateur', 'secretaire']);
 
@@ -115,6 +119,14 @@ export default function ScanQR() {
         setScanning(false);
         handleDetected(result.getText());
       })
+      .then((controls) => {
+        // controls est disponible seulement ici (promesse résolue) : on détecte
+        // si le flash (switchTorch) est supporté par cet appareil.
+        controlsRef.current = controls;
+        if (typeof controls.switchTorch === 'function') {
+          setTorchAvailable(true);
+        }
+      })
       .catch((err) => {
         console.error(err);
         setCameraError("Impossible d'accéder à la caméra. Vérifie les autorisations du navigateur.");
@@ -122,10 +134,29 @@ export default function ScanQR() {
 
     return () => {
       cancelled = true;
+      // Éteindre le flash quand on coupe le scan (évite de laisser la lampe allumée)
+      if (controlsRef.current?.switchTorch) {
+        controlsRef.current.switchTorch(false).catch(() => {});
+      }
+      setTorchOn(false);
+      setTorchAvailable(false);
       controlsRef.current?.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanning, cameraActive]);
+
+  const toggleTorch = async () => {
+    const controls = controlsRef.current;
+    if (!controls?.switchTorch) return;
+    const next = !torchOn;
+    try {
+      await controls.switchTorch(next);
+      setTorchOn(next);
+    } catch (err) {
+      console.error(err);
+      alert("Impossible d'activer le flash sur cet appareil.");
+    }
+  };
 
   const handleDetected = async (qrValue) => {
     setLookupError(null);
@@ -235,6 +266,21 @@ export default function ScanQR() {
             {cameraActive ? (
               <div className="relative aspect-square bg-black">
                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+                {/* Flash toggle */}
+                {torchAvailable && (
+                  <button
+                    type="button"
+                    onClick={toggleTorch}
+                    title={torchOn ? 'Éteindre le flash' : 'Allumer le flash'}
+                    className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
+                      torchOn
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-white/90 text-gray-700 hover:bg-white'
+                    }`}
+                  >
+                    {torchOn ? <FlashlightOff className="h-5 w-5" /> : <Flashlight className="h-5 w-5" />}
+                  </button>
+                )}
                 {/* Scanning overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-48 h-48 border-2 border-white/40 rounded-2xl">
