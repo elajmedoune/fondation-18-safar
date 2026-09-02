@@ -131,7 +131,7 @@ export const membresService = {
         const roleBureau = m.user_id ? roleByUserId.get(m.user_id) : null;
         const fonctionAffichee =
           (roleBureau && ROLE_LABELS[roleBureau]) ||
-          (responsableIds.has(m.id) ? `Responsable (${f.groupe?.nom || 'groupe'})` : null) ||
+          (responsableIds.has(m.id) ? `Resp. ${f.groupe?.nom || 'groupe'}` : null) ||
           f.fonction ||
           null;
         return { ...f, fonctionAffichee, _roleBureau: roleBureau || null };
