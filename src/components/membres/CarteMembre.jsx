@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { Camera, Loader2, Download } from 'lucide-react';
 import { membresService } from '../../services/membres.service.js';
+import { bustCache } from '../../lib/bustCache.js';
 
 const CARD_WIDTH = 480;
 const CARD_HEIGHT = 303;
@@ -20,15 +21,6 @@ function loadImg(src) {
     img.onerror = reject;
     img.src = src;
   });
-}
-
-// Ajoute un paramètre unique à l'URL pour forcer le navigateur à re-télécharger
-// l'image au lieu de servir l'ancienne mise en cache. Indispensable quand la
-// photo est ré-uploadée au même chemin (même URL).
-function bustCache(url, rev = 0) {
-  if (!url) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}t=${Date.now()}-${rev}`;
 }
 
 function coverDraw(ctx, img, x, y, w, h) {

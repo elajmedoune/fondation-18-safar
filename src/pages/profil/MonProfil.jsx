@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Camera, Pencil } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { membresService } from '../../services/membres.service.js';
+import { bustCache } from '../../lib/bustCache.js';
 
 const ROLE_LABELS = {
   membre: 'Membre',
@@ -37,6 +38,16 @@ export default function MonProfil() {
   );
 
   const [uploading, setUploading] = useState(false);
+  // Copie locale de l'URL de la photo + compteur de révision : la photo est
+  // ré-écrite au MÊME chemin, donc l'URL ne change pas et le navigateur
+  // servirait sa copie en cache (l'ancienne image resterait affichée).
+  const [photoUrl, setPhotoUrl] = useState(membre?.photo_url || null);
+  const [photoRev, setPhotoRev] = useState(0);
+
+  // Resynchronise avec la donnée du contexte si elle change ailleurs.
+  useEffect(() => {
+    setPhotoUrl(membre?.photo_url || null);
+  }, [membre?.photo_url]);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -58,6 +69,8 @@ export default function MonProfil() {
       const photo_url = await membresService.uploadPhoto(file, membre.id);
       await membresService.update(membre.id, { photo_url }, { userId: user.id });
       setFeedback({ type: 'success', message: 'Photo mise à jour.' });
+      setPhotoUrl(photo_url);
+      setPhotoRev((v) => v + 1);
       queryClient.invalidateQueries();
     } catch (err) {
       console.error(err);
@@ -108,8 +121,8 @@ export default function MonProfil() {
 
       <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-6 text-center space-y-4">
         <div className="relative inline-block">
-          {membre.photo_url ? (
-            <img src={membre.photo_url} alt="" className="h-24 w-24 rounded-full object-cover mx-auto" />
+          {photoUrl ? (
+            <img src={bustCache(photoUrl, photoRev)} alt="" className="h-24 w-24 rounded-full object-cover mx-auto" />
           ) : (
             <div className="h-24 w-24 rounded-full bg-primary-700 text-white flex items-center justify-center text-2xl font-semibold mx-auto">
               {membre.prenom?.[0]}{membre.nom?.[0]}
