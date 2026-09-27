@@ -321,13 +321,37 @@ export const membresService = {
       // image illisible (ex. HEIC sous Chrome) : on garde le fichier d'origine
     }
     const ext = 'jpg';
-    const path = `${membreId || 'temp-' + Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('membres-photos').upload(path, uploadFile, {
-      upsert: true,
+    // Le nom du fichier doit changer à CHAQUE import. Avec un nom fixe
+    // ("<id>.jpg"), l'URL returned est toujours la même et le navigateur sert
+    // sa copie en cache : la nouvelle photo n'apparaît jamais, ni sur la page
+    // profil, ni dans le layout, ni dans les listes. Le suffixe horodaté
+    // rend l'URL unique, donc le cache devient inopérant partout.
+    const stamp = Date.now();
+    const path = membreId ? `${membreId}-${stamp}.${ext}` : `temp-${stamp}.${ext}`;
+    const bucket = supabase.storage.from('membres-photos');
+    const { error } = await bucket.upload(path, uploadFile, {
       contentType: uploadFile.type || 'image/jpeg',
     });
     if (error) throw error;
-    const { data } = supabase.storage.from('membres-photos').getPublicUrl(path);
+    const { data } = bucket.getPublicUrl(path);
+
+    // Ménage de l'ancienne photo : sans cela, le bucket accumule un fichier
+    // par import. Une erreur de suppression n'est pas bloquante.
+    if (membreId) {
+      try {
+        const { data: current } = await supabase
+          .from('membres')
+          .select('photo_url')
+          .eq('id', membreId)
+          .single();
+        const oldPath = current?.photo_url ? current.photo_url.split('/').pop() : null;
+        if (oldPath && oldPath !== path && !oldPath.startsWith('temp-')) {
+          await bucket.remove([oldPath]);
+        }
+      } catch {
+        // l'ancien fichier reste : sans conséquence sur l'affichage
+      }
+    }
     return data.publicUrl;
   },
 
