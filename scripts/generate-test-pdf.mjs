@@ -1,160 +1,190 @@
-// Génère un PDF de test du tableau des cotisations et VÉRIFIE la mise en page.
+// Test de mise en page des exports PDF.
 //
-//   node scripts/generate-test-pdf.mjs
+// Produit preview/cotisations-test.pdf (données fictives) et sort en code 1
+// si la mise en page ne respecte pas les règles ci-dessous.
 //
-// Produit preview/cotisations-test.pdf (données fictives) et sort en code 1 si
-// une régression est détectée : en-tête coupé caractère par caractère, ligne
-// trop haute, tableau hors page.
+// Le test rend DEUX tableaux :
+//   1. la table "Membres", avec la configuration copiée verbatim de
+//      src/pages/membres/MembresList.jsx. C'est la référence : son en-tête
+//      tient sur une seule ligne, c'est le rendu attendu pour "Cotisations" ;
+//   2. la table "Cotisations", avec la configuration réellement utilisée par
+//      l'application (importée de src/lib/pdfTableLayout.js).
 //
-// Les largeurs de colonnes sont importées de src/lib/pdfTableLayout.js, le
-// même module que l'application : le PDF de test ne peut donc pas diverger du
-// PDF réellement produit par /finances/cotisations.
+// Puis il compare les deux. Si les en-têtes divergent, c'est qu'une
+// configuration a divergé de l'autre.
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  LARGEURS_COMPACT, LARGEURS_ROOMY, MARGE, LARGEUR_UTILE, LARGEUR_PAGE, INDEX_PHOTO
+  COLUMN_STYLES, STYLES, HEAD_STYLES, MARGES, ALTERNATE_ROW_STYLES,
+  TITRE_PHOTO, INDEX_PHOTO, HAUTEUR_LIGNE, SEUIL_TETE_UNE_LIGNE, LARGEUR_PAGE
 } from '../src/lib/pdfTableLayout.js';
 
+const FCFA = (n) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
+
 const NOMS = [
-  'Elhadji Medoune Gningue', 'Bassirou Gningue', 'Serigne Gning', 'Mbaye Ndoa',
-  'Pape Talla Mbaye', 'Thiama Thiam', 'Mané Talla', 'Amy Fall', 'Kadia Thiam',
+  ['Gningue', 'Elhadji Medoune'], ['Sarr', 'Moussa'], ['Diop', 'Fatou Binta'],
+  ['Faye', 'Ousmane'], ['Bassène', 'Mariama Sagna'], ['Ndiaye', 'Cheikh'],
 ];
-const MONTANTS = [1000, 500, 1000, 1000, 1000, 500, 500, 500, 500];
+const MODES = ['Espèces', 'Mobile Money', 'Espèces', 'Virement bancaire'];
+const NOTES = ['Enregistrer par Medoune Sagna', '', 'Paiement partiel le 29/09', ''];
 
-const TETE = ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'];
+const COTISATIONS = Array.from({ length: 24 }, (_, i) => {
+  const [nom, prenom] = NOMS[i % NOMS.length];
+  return {
+    index: i + 1,
+    nom: `${prenom} ${nom}`,
+    numero: `F18 S-000${13 + i}`,
+    montant: 750000 + i * 125000,
+    mode: MODES[i % MODES.length],
+    date: `2${7 + (i % 3)}/09/2026`,
+    note: NOTES[i % NOTES.length],
+  };
+});
 
-const lignes = NOMS.map((nom, i) => [
-  '',
-  i + 1,
-  nom,
-  `F18 S-${String(13 + i * 7).padStart(5, '0')}`,
-  `${MONTANTS[i].toLocaleString('fr-FR').replace(/ | /g, ' ')} FCFA`,
-  'Espèces',
-  '27/09/2026',
-  i % 3 === 1 ? 'Enregistrer par Medoune' : '',
-]);
+const TETE_COTISATIONS = ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'];
 
-// Deux jeux : police 8 (export global) et police 9 (export par mois).
-const VARIANTES = [
-  { nom: 'compact', fontSize: 8, cellPadding: 2, largeurs: LARGEURS_COMPACT },
-  { nom: 'roomy', fontSize: 9, cellPadding: 3, largeurs: LARGEURS_ROOMY },
-];
-
-const doc = new jsPDF();
 let echecs = 0;
-const largeurTotale = (l) => Object.values(l).reduce((s, w) => s + w.cellWidth, 0);
+const echouees = (msg) => { console.error(`  ✗ ${msg}`); echecs++; };
 
-for (const v of VARIANTES) {
-  if (largeurTotale(v.largeurs) > LARGEUR_UTILE) {
-    console.error(`✗ ${v.nom} : largeurs = ${largeurTotale(v.largeurs)} mm > ${LARGEUR_UTILE} mm`);
-    echecs++;
-  }
-
-  // Bornes verticales de chaque colonne, pour vérifier qu'aucune valeur ne
-  // déborde de sa cellule.
-  let x = MARGE;
-  const bornes = v.largeurs && Object.keys(v.largeurs).length
-    ? Object.values(v.largeurs).map((w) => { const b = [x, x + w.cellWidth]; x += w.cellWidth; return b; })
-    : [];
-
-  // Textes RÉELLEMENT rendus, cellule par cellule. Pour une valeur coupée sur
-  // deux lignes, data.cell.text vaut ['F18 ', 'S-00', '013'] : la valeur
-  // complète n'apparaît donc jamais dans le set, ce qui la signale.
-  const teteEcrit = new Set();
-  const corpsEcrit = new Set();
-
-  autoTable(doc, {
-    startY: doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : 32,
-    head: [['', ...TETE]],
-    body: lignes,
-    styles: { fontSize: v.fontSize, cellPadding: v.cellPadding, overflow: 'linebreak' },
-    headStyles: {
-      fillColor: [15, 118, 110], textColor: 255,
-      fontStyle: 'bold', fontSize: v.fontSize - 1,
-    },
-    margin: { left: MARGE, right: MARGE },
-    columnStyles: v.largeurs,
-    didDrawCell: (d) => {
-      const rendu = Array.isArray(d.cell.text) ? d.cell.text.join(' ').trim() : String(d.cell.text ?? '').trim();
-      if (rendu) (d.section === 'head' ? teteEcrit : corpsEcrit).add(rendu);
-
-      if (d.section !== 'body' || d.column.index !== INDEX_PHOTO) return;
-      const { x: cx, y: cy, width: cw, height: ch } = d.cell;
-      const dia = Math.min(cw - 2, ch - 2, 9);
-      // Initiales lues dans d.row.raw, jamais par index : le numéro de ligne
-      // est absent quand une ligne est coupée par un saut de page.
-      const nom = String(d.row?.raw?.[2] || '').trim();
-      const ini = nom.split(/\s+/).slice(0, 2).map((m) => m[0] || '').join('').toUpperCase();
-      d.doc.setFillColor(236, 239, 238);
-      d.doc.circle(cx + cw / 2, cy + ch / 2, dia / 2, 'F');
-      d.doc.setFontSize(Math.max(5, dia * 0.42));
-      d.doc.setTextColor(110, 120, 118);
-      d.doc.text(ini, cx + cw / 2, cy + ch / 2, { align: 'center', baseline: 'middle' });
-    },
-  });
-
-  const rows = doc.lastAutoTable.allRows();
-  const hTete = rows[0].height;
-  const hCorps = rows[1].height;
-  const bordDroit = MARGE + largeurTotale(v.largeurs);
-  const hLigneTheorique = v.fontSize * 0.3528 + v.cellPadding * 2;
-
-  console.log(`\n[${v.nom}] police ${v.fontSize}`);
-  console.log(`  somme largeurs   : ${largeurTotale(v.largeurs)} / ${LARGEUR_UTILE} mm`);
-  console.log(`  bord droit       : ${bordDroit} / ${LARGEUR_PAGE} mm`);
-  console.log(`  hauteur en-tête  : ${hTete.toFixed(1)} mm`);
-  console.log(`  hauteur ligne    : ${hCorps.toFixed(1)} mm (1 ligne = ${hLigneTheorique.toFixed(1)} mm)`);
-
-  // L'en-tête doit tenir sur une seule ligne.
-  if (hTete > hLigneTheorique * 1.6) {
-    console.error(`  ✗ en-tête sur plusieurs lignes (${hTete.toFixed(1)} mm)`);
-    echecs++;
-  }
-  // Une ligne de données doit tenir sur une à deux lignes.
-  if (hCorps > hLigneTheorique * 2.4) {
-    console.error(`  ✗ ligne sur plus de 2 lignes (${hCorps.toFixed(1)} mm)`);
-    echecs++;
-  }
-  // Le tableau doit rester dans la page.
-  if (bordDroit > LARGEUR_PAGE) {
-    console.error(`  ✗ tableau hors page`);
-    echecs++;
-  }
-  // La colonne N° doit contenir "F18 S-00013" sur une seule ligne.
-  if (hCorps > hLigneTheorique * 1.6) {
-    console.error(`  ✗ colonne N° ou Date coupée (hauteur ${hCorps.toFixed(1)} mm)`);
-    echecs++;
-  }
-
-  // Chaque libellé d'en-tête doit être RÉELLEMENT écrit dans le flux PDF.
-  // Ce test a été ajouté après un défaut invisible : avec une colonne de 7 mm
-  // et un padding de 3, la zone de texte faisait 1 mm et le symbole "#" n'était
-  // plus écrit du tout — le tableau avait l'air correct, il manquait un titre.
-  const manquants = TETE.filter((t) => !teteEcrit.has(t));
-  if (manquants.length) {
-    console.error(`  ✗ en-têtes absents du PDF : ${manquants.map((m) => JSON.stringify(m)).join(', ')}`);
-    echecs++;
-  } else {
-    console.log(`  en-têtes écrits      : ${TETE.length}/${TETE.length}`);
-  }
-
-  // Les valeurs des colonnes numériques ne doivent pas être coupées.
-  const coupes = [];
-  for (const attendu of ['F18 S-00013', '27/09/2026', '1 000 FCFA', 'Espèces']) {
-    if (!corpsEcrit.has(attendu)) coupes.push(attendu);
-  }
-  if (coupes.length) {
-    console.error(`  ✗ valeurs coupées sur plusieurs lignes : ${coupes.join(', ')}`);
-    echecs++;
-  } else {
-    console.log(`  valeurs en une ligne : OK`);
-  }
+/** Textes réellement écrits dans le flux PDF. */
+function textesEcrits(doc) {
+  const raw = Buffer.from(doc.output('arraybuffer')).toString('latin1');
+  return new Set([...raw.matchAll(/\(([^)]*)\)\s*Tj/g)].map((m) => m[1]));
 }
 
-// Volontairement HORS de dist/ : « vite build » vide dist/ à chaque build et
-// le fichier de test disparaissait avant qu'on puisse l'ouvrir.
+function titreDePage(doc, texte, sousTitre) {
+  doc.setFontSize(16); doc.setTextColor(15, 118, 110);
+  doc.text(texte, 14, 18);
+  doc.setFontSize(10); doc.setTextColor(100);
+  doc.text(sousTitre, 14, 25);
+  doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5);
+  doc.line(14, 30, 196, 30);
+}
+
+// ---------------------------------------------------------------- référence
+// Configuration copiée verbatim de MembresList.jsx.
+const doc = new jsPDF();
+titreDePage(doc, 'Membres - 18 Safar 2027', `${NOMS.length} membre(s)`);
+autoTable(doc, {
+  startY: 32,
+  head: [['#', 'Nom', 'Prenom', 'N° Membre', 'Telephone', 'Sexe', 'Groupe', 'Fonction', 'Cotisé', 'Objectif']],
+  body: COTISATIONS.map((c) => [
+    c.index, c.nom.split(' ')[1], c.nom.split(' ')[0], c.numero, '77 123 45 67',
+    'M', 'Groupe A', 'Président', FCFA(c.montant), FCFA(500000),
+  ]),
+  styles: { fontSize: 7, cellPadding: 2 },
+  headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
+  alternateRowStyles: { fillColor: [240, 253, 250] },
+  margin: { left: 10, right: 10 },
+});
+
+const teteMembres = doc.lastAutoTable.allRows()[0].height;
+console.log('[référence] tableau "Membres" (config de MembresList.jsx)');
+console.log(`  en-tête : ${teteMembres.toFixed(1)} mm`);
+if (teteMembres > SEUIL_TETE_UNE_LIGNE) {
+  echouees(`la référence elle-même est sur plusieurs lignes (${teteMembres.toFixed(1)} mm) : la référence n'est plus exploitable`);
+}
+
+// ------------------------------------------------------------- cotisations
+titreDePage(doc, 'Cotisations', `${COTISATIONS.length} cotisation(s)`);
+
+// Les cellules de la colonne photo sont vides comme dans l'application : c'est
+// didDrawCell qui y dessine la photo circulaire.
+const body = COTISATIONS.map((c) => [
+  TITRE_PHOTO, c.index, c.nom, c.numero, FCFA(c.montant), c.mode, c.date, c.note,
+]);
+
+const ecrits = new Set();
+autoTable(doc, {
+  startY: doc.lastAutoTable.finalY + 12,
+  head: [[TITRE_PHOTO, ...TETE_COTISATIONS]],
+  body,
+  styles: STYLES,
+  headStyles: HEAD_STYLES,
+  alternateRowStyles: ALTERNATE_ROW_STYLES,
+  margin: MARGES,
+  columnStyles: COLUMN_STYLES,
+  didDrawCell: (d) => {
+    if (d.cell.text) {
+      ecrits.add((Array.isArray(d.cell.text) ? d.cell.text.join(' ') : String(d.cell.text)).trim());
+    }
+    if (d.section !== 'body' || d.column.index !== INDEX_PHOTO) return;
+    const { x, y, width, height } = d.cell;
+    const dia = Math.min(width - 2, height - 2, 9);
+    // Le nom est lu dans d.row.raw : d.row.index est absent quand une ligne
+    // est coupée par un saut de page, ce qui lève une TypeError et casse
+    // l'export global.
+    const nom = String(d.row?.raw?.[2] || '').trim();
+    const initiales = nom.split(/\s+/).slice(0, 2).map((m) => m[0] || '').join('').toUpperCase();
+    d.doc.setFillColor(236, 239, 238);
+    d.doc.circle(x + width / 2, y + height / 2, dia / 2, 'F');
+    d.doc.setFontSize(Math.max(5, dia * 0.42));
+    d.doc.setTextColor(110, 120, 118);
+    d.doc.text(initiales, x + width / 2, y + height / 2, { align: 'center', baseline: 'middle' });
+  },
+});
+
+const lignes = doc.lastAutoTable.allRows();
+const teteCotisations = lignes[0].height;
+const corps = lignes.slice(1);
+
+console.log('\n[cible] tableau "Cotisations" (config de l\'application)');
+console.log(`  en-tête          : ${teteCotisations.toFixed(1)} mm`);
+console.log(`  bandeau vert     : ${(teteCotisations / HAUTEUR_LIGNE).toFixed(1)} ligne(s) de texte`);
+console.log(`  lignes           : ${corps.length}, dont ${corps.filter((l) => l.height > SEUIL_TETE_UNE_LIGNE).length} sur plusieurs lignes`);
+console.log(`  pages            : ${doc.internal.getNumberOfPages()}`);
+
+// 1. L'en-tête doit tenir sur une seule ligne.
+if (teteCotisations > SEUIL_TETE_UNE_LIGNE) {
+  echouees(`en-tête sur plusieurs lignes (${teteCotisations.toFixed(1)} mm pour une ligne = ${HAUTEUR_LIGNE} mm)`);
+}
+
+// 2. Il doit être identique à celui de la table qui fonctionne.
+if (Math.abs(teteCotisations - teteMembres) > 0.6) {
+  echouees(`l'en-tête diverge de la référence "Membres" (${teteCotisations.toFixed(1)} mm contre ${teteMembres.toFixed(1)} mm)`);
+}
+
+// 3. Aucun titre ne doit manquer. Ce test existe parce qu'un défaut était
+//    invisible : avec une colonne de 7 mm et un padding de 3, la zone de
+//    texte faisait 1 mm et le symbole "#" n'était PLUS DU TOUT écrit.
+const manquants = TETE_COTISATIONS.filter((t) => !ecrits.has(t));
+if (manquants.length) {
+  echouees(`titres absents du PDF : ${manquants.map((m) => `"${m}"`).join(', ')}`);
+} else {
+  console.log(`  titres écrits    : ${TETE_COTISATIONS.length}/${TETE_COTISATIONS.length}`);
+}
+
+// 4. Les valeurs ne doivent pas être coupées. Pour une valeur sur deux lignes,
+//    d.cell.text vaut ["F18 ", "S-00", "013"] : la valeur complète n'apparaît
+//    jamais, ce qui la signale.
+const primera = COTISATIONS[0];
+const attendus = [primera.numero, primera.date, FCFA(primera.montant), primera.mode];
+const coupes = attendus.filter((v) => !ecrits.has(v));
+if (coupes.length) {
+  echouees(`valeurs coupées sur plusieurs lignes : ${coupes.map((v) => `"${v}"`).join(', ')}`);
+} else {
+  console.log('  N° / Date / Montant / Mode : sur une seule ligne');
+}
+
+// 5. Le tableau doit tenir dans la page.
+const bordDroit = MARGES.left + LARGEUR_PAGE - MARGES.right;
+console.log(`  bord droit       : ${bordDroit.toFixed(0)} / ${LARGEUR_PAGE} mm`);
+if (bordDroit > LARGEUR_PAGE) echouees('tableau hors page');
+
+// 6. Contrôle final sur le flux PDF réel : chaque titre doit apparaître comme
+//    opérateur de texte EXACT. Un titre découpé caractère par caractère
+//    produirait des opérateurs de 1 caractère et jamais le mot entier.
+//    La comparaison doit être exacte : "N°" est aussi une sous-chaîne du
+//    titre "N° Membre" du tableau de référence, et ça ne doit pas compter
+//    comme un défaut.
+const flux = textesEcrits(doc);
+const titresAbsents = TETE_COTISATIONS.filter((t) => !flux.has(t));
+if (titresAbsents.length) {
+  echouees(`titres absents du flux PDF : ${titresAbsents.map((t) => `"${t}"`).join(', ')}`);
+}
+
 mkdirSync('preview', { recursive: true });
 const sortie = 'preview/cotisations-test.pdf';
 writeFileSync(sortie, Buffer.from(doc.output('arraybuffer')));

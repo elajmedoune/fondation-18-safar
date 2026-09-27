@@ -9,7 +9,8 @@ import { cotisationsService } from '../../services/cotisations.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
 import { preloadPhotos, drawCirclePhoto } from '../../lib/pdfPhoto.js';
 import {
-  LARGEURS_COMPACT, LARGEURS_ROOMY, MARGE, LARGEUR_UTILE, INDEX_PHOTO
+  INDEX_PHOTO, COLUMN_STYLES, STYLES, HEAD_STYLES,
+  MARGES, ALTERNATE_ROW_STYLES, TITRE_PHOTO
 } from '../../lib/pdfTableLayout.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -225,8 +226,7 @@ export default function Cotisations() {
   // Les largeurs de colonnes vivent dans src/lib/pdfTableLayout.js, importées
   // par ce composant ET par scripts/generate-test-pdf.mjs : le PDF de test ne
   // peut donc pas diverger du PDF réellement produit.
-  const WIDTHS_COMPACT = LARGEURS_COMPACT;
-  const WIDTHS_ROOMY = LARGEURS_ROOMY;
+
 
   /**
    * Construit la configuration autoTable et dessine les photos circulaires.
@@ -238,7 +238,7 @@ export default function Cotisations() {
    * n'est écrit sur 10 mm. Les mots d'en-tête sont volontairement courts pour
    * tenir sur une seule ligne.
    */
-  const buildTableConfig = async (rows, head, { startY, fontSize, cellPadding, columnStyles }) => {
+  const buildTableConfig = async (rows, head, { startY }) => {
     const photos = await preloadPhotos(rows, photoKey, (c) => c.membre?.photo_url);
     const body = buildTableRows(rows);
     // Les photos sont indexées par identité du tableau de ligne (WeakMap) et
@@ -251,13 +251,13 @@ export default function Cotisations() {
 
     return {
       startY,
-      head: ['', ...head],
+      head: [TITRE_PHOTO, ...head],
       body,
-      styles: { fontSize, cellPadding, overflow: 'linebreak' },
-      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold', fontSize: fontSize - 1 },
-      alternateRowStyles: { fillColor: [240, 253, 250] },
-      margin: { left: MARGE, right: MARGE },
-      columnStyles,
+      styles: STYLES,
+      headStyles: HEAD_STYLES,
+      alternateRowStyles: ALTERNATE_ROW_STYLES,
+      margin: MARGES,
+      columnStyles: COLUMN_STYLES,
       didDrawCell: (data) => {
         if (data.section !== 'body' || data.column.index !== INDEX_PHOTO) return;
         const { x, y, width, height } = data.cell;
@@ -326,7 +326,7 @@ export default function Cotisations() {
       autoTable(doc, await buildTableConfig(
         rows,
         ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'],
-        { startY, fontSize: 8, cellPadding: 2, columnStyles: WIDTHS_COMPACT }
+        { startY }
       ));
       startY = doc.lastAutoTable.finalY + 8;
     }
@@ -355,7 +355,7 @@ export default function Cotisations() {
       // "Date" et non "Date paiement" : l'en-tête complet ne tient pas dans
       // la largeur de colonne et serait coupé caractère par caractère.
       ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'],
-      { startY: 32, fontSize: 9, cellPadding: 3, columnStyles: WIDTHS_ROOMY }
+      { startY: 32 }
     ));
 
     renderPdfFooter(doc, ca.nom);
