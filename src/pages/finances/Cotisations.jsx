@@ -219,19 +219,21 @@ export default function Cotisations() {
   // première après un changement.
   const photoKey = (c) => c.id;
 
-  // Largeurs en mm. La largeur utile est 210 - 14 - 14 = 182.
+  // Largeurs en mm, toutes fixées : la largeur utile est 210 - 14 - 14 = 182.
+  // Aucune colonne n'est laissée en "auto" : le tableau débordait la largeur
+  // de la page. Chaque jeu somme exactement à 182.
   // Colonnes : photo, #, Membre, N°, Montant, Mode, Date, Note.
   const WIDTHS_COMPACT = {
-    0: { cellWidth: 9 }, 1: { cellWidth: 7 }, 2: { cellWidth: 34 },
+    0: { cellWidth: 9 }, 1: { cellWidth: 7 }, 2: { cellWidth: 33 },
     3: { cellWidth: 11 }, 4: { cellWidth: 20 }, 5: { cellWidth: 15 },
-    6: { cellWidth: 15 }, 7: { cellWidth: 'auto' }
+    6: { cellWidth: 15 }, 7: { cellWidth: 72 }
   };
   // Version lisible : caractères plus grands, donc colonnes plus larges.
-  // La colonne Note se rabat sur le reste.
+  // Somme = 182 exactement.
   const WIDTHS_ROOMY = {
     0: { cellWidth: 11 }, 1: { cellWidth: 8 }, 2: { cellWidth: 40 },
     3: { cellWidth: 13 }, 4: { cellWidth: 24 }, 5: { cellWidth: 19 },
-    6: { cellWidth: 19 }, 7: { cellWidth: 'auto' }
+    6: { cellWidth: 19 }, 7: { cellWidth: 48 }
   };
 
   /**
