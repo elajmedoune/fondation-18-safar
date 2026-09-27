@@ -23,10 +23,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // attendent le même résultat.
 let refreshInFlight = null;
 
+// Une session dont le refresh token a été révoqué est IRRÉCUPÉRABLE : le
+// renewing échoue en boucle (400 sur /auth/v1/token), donc toutes les Edge
+// Functions renvoient 401 et l'app paraît cassée. La seule sortie est de
+// purger la session locale et de renvoyer vers la connexion.
+let sessionInvalideSignalee = false;
+
 export function refreshSessionOnce() {
   if (!refreshInFlight) {
     refreshInFlight = supabase.auth
       .refreshSession()
+      .then(async (result) => {
+        const { error } = result || {};
+        // 400 = refresh token inconnu/révoqué/expiré : aucun nouvel essai ne
+        // peut aboutir, on force la reconnexion.
+        const irrecoverable =
+          error && (error.status === 400 || /invalid refresh token|invalid_grant|not found/i.test(error.message || ''));
+        if (irrecoverable && !sessionInvalideSignalee) {
+          sessionInvalideSignalee = true;
+          await supabase.auth.signOut().catch(() => {});
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+            window.location.assign('/login');
+          }
+        }
+        return result;
+      })
       .finally(() => {
         refreshInFlight = null;
       });
