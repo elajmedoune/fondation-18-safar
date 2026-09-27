@@ -3,6 +3,15 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // Identifiant du build, injecté à la compilation et affiché dans l'interface
+  // (menu profil). Sans cela, impossible de savoir quel code le navigateur
+  // exécute réellement quand un cache obsolète sert un vieux bundle : on ne
+  // voit plus que des symptômes ("ça n'a pas changé") sans cause.
+  define: {
+    __BUILD_ID__: JSON.stringify(
+      new Date().toISOString().replace('T', ' ').slice(0, 19)
+    ),
+  },
   plugins: [
     react(),
     VitePWA({

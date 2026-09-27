@@ -61,6 +61,9 @@ export default function ProfileMenu() {
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
             <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{nomComplet}</p>
             <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+            {/* Build en cours d'exécution : permet de vérifier d'un coup d'œil
+                que le navigateur sert bien le dernier code compilé. */}
+            <p className="text-[10px] text-gray-400 dark:text-gray-600 font-mono">build {__BUILD_ID__}</p>
             <span className="inline-block mt-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
               {ROLE_LABELS[rolePrincipal] || rolePrincipal}
             </span>
