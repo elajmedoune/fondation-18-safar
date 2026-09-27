@@ -8,6 +8,9 @@ import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
 import { preloadPhotos, drawCirclePhoto } from '../../lib/pdfPhoto.js';
+import {
+  LARGEURS_COMPACT, LARGEURS_ROOMY, MARGE, LARGEUR_UTILE, INDEX_PHOTO
+} from '../../lib/pdfTableLayout.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import ExportMenu from '../../components/ui/ExportMenu.jsx';
@@ -219,57 +222,63 @@ export default function Cotisations() {
   // première après un changement.
   const photoKey = (c) => c.id;
 
-  // Largeurs en mm, toutes fixées : la largeur utile est 210 - 14 - 14 = 182.
-  // Aucune colonne n'est laissée en "auto" : le tableau débordait la largeur
-  // de la page. Chaque jeu somme exactement à 182.
-  // Colonnes : photo, #, Membre, N°, Montant, Mode, Date, Note.
-  const WIDTHS_COMPACT = {
-    0: { cellWidth: 9 }, 1: { cellWidth: 7 }, 2: { cellWidth: 33 },
-    3: { cellWidth: 11 }, 4: { cellWidth: 20 }, 5: { cellWidth: 15 },
-    6: { cellWidth: 15 }, 7: { cellWidth: 72 }
-  };
-  // Version lisible : caractères plus grands, donc colonnes plus larges.
-  // Somme = 182 exactement.
-  const WIDTHS_ROOMY = {
-    0: { cellWidth: 11 }, 1: { cellWidth: 8 }, 2: { cellWidth: 40 },
-    3: { cellWidth: 13 }, 4: { cellWidth: 24 }, 5: { cellWidth: 19 },
-    6: { cellWidth: 19 }, 7: { cellWidth: 48 }
-  };
+  // Les largeurs de colonnes vivent dans src/lib/pdfTableLayout.js, importées
+  // par ce composant ET par scripts/generate-test-pdf.mjs : le PDF de test ne
+  // peut donc pas diverger du PDF réellement produit.
+  const WIDTHS_COMPACT = LARGEURS_COMPACT;
+  const WIDTHS_ROOMY = LARGEURS_ROOMY;
 
   /**
    * Construit la configuration autoTable et dessine les photos circulaires.
    * Les photos sont chargées avant l'appel : le rendu de didDrawCell est
    * synchrone, on ne peut donc pas déclencher un fetch pendant le tracé.
    *
-   * Les largeurs de colonnes sont fixées explicitement. Sans cela, la colonne
-   * photo prend sa part et les autres se partagent le reste à parts égales :
-   * les en-têtes les plus larges ("Montant", "Date paiement") ne tiennent
-   * alors plus dans leur cellule, et autoTable coupe un mot trop long
-   * caractère par caractère ("M o n t a n t").
+   * L'en-tête de la colonne photo est vide (et non "Photo") : la cellule reste
+   * peinte comme les autres, donc la bande verte est continue, mais aucun mot
+   * n'est écrit sur 10 mm. Les mots d'en-tête sont volontairement courts pour
+   * tenir sur une seule ligne.
    */
   const buildTableConfig = async (rows, head, { startY, fontSize, cellPadding, columnStyles }) => {
     const photos = await preloadPhotos(rows, photoKey, (c) => c.membre?.photo_url);
+    const body = buildTableRows(rows);
+    // Les photos sont indexées par identité du tableau de ligne (WeakMap) et
+    // non par numéro de ligne : data.row.raw est l'instance exacte passée à
+    // autoTable, alors que data.row.index disparaît quand une ligne est
+    // coupée par un saut de page — cas réel dans l'export global, où les
+    // derniers mois démarrent près du bas de page.
+    const photoParLigne = new WeakMap();
+    rows.forEach((c, i) => photoParLigne.set(body[i], photos.get(photoKey(c))));
+
     return {
       startY,
       head: ['', ...head],
-      body: buildTableRows(rows),
+      body,
       styles: { fontSize, cellPadding, overflow: 'linebreak' },
-      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold', fontSize: fontSize - 1 },
       alternateRowStyles: { fillColor: [240, 253, 250] },
-      margin: { left: 14, right: 14 },
+      margin: { left: MARGE, right: MARGE },
       columnStyles,
       didDrawCell: (data) => {
-        if (data.section !== 'body' || data.column.index !== 0) return;
+        if (data.section !== 'body' || data.column.index !== INDEX_PHOTO) return;
         const { x, y, width, height } = data.cell;
-        const c = rows[data.row.index];
+        // On lit le nom dans data.row.raw et non dans rows[data.row.index] :
+        // quand une ligne est coupée par un saut de page, autoTable la
+        // réimprime sans "index", et l'indexation renvoyait undefined (puis
+        // une TypeError sur .membre, qui cassait l'export entier).
+        const nomComplet = String(data.row?.raw?.[2] || '').trim();
+        const initiales = nomComplet
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((mot) => mot[0] || '')
+          .join('')
+          .toUpperCase();
         const d = Math.min(width - 2, height - 2, 9);
-        const initiales = `${c.membre?.prenom?.[0] || ''}${c.membre?.nom?.[0] || ''}`.toUpperCase();
         drawCirclePhoto(
           data.doc,
           x + (width - d) / 2,
           y + (height - d) / 2,
           d,
-          photos.get(photoKey(c)),
+          photoParLigne.get(data.row?.raw),
           initiales
         );
       }
