@@ -79,6 +79,7 @@ export default function MembreProfil() {
   const [photoPreview, setPhotoPreview] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const photoInputRef = useRef(null);
+  const blobRef = useRef(null);
 
   const { data: fiche, isLoading } = useQuery({
     queryKey: ['membre-fiche', id, campagneActive?.id],
@@ -171,14 +172,27 @@ export default function MembreProfil() {
     if (!file) return;
     setUploadingPhoto(true);
     setFeedback(null);
-    setPhotoPreview(URL.createObjectURL(file));
+    // Aperçu local immédiat. L'objet blob est libéré dès qu'il est remplacé
+    // par l'URL publique, sinon il reste en mémoire toute la session.
+    const apercu = URL.createObjectURL(file);
+    if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    blobRef.current = apercu;
+    setPhotoPreview(apercu);
     try {
       const uploaded = await membresService.uploadPhoto(file, id);
       setPhotoUrl(uploaded);
       setPhotoPreview(uploaded);
+      if (blobRef.current) {
+        URL.revokeObjectURL(blobRef.current);
+        blobRef.current = null;
+      }
     } catch (err) {
       console.error(err);
       setPhotoPreview('');
+      if (blobRef.current) {
+        URL.revokeObjectURL(blobRef.current);
+        blobRef.current = null;
+      }
       setFeedback({ type: 'error', message: `Erreur : ${err?.message || err}` });
     } finally {
       setUploadingPhoto(false);
