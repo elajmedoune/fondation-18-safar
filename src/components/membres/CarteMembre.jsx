@@ -350,7 +350,9 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
       onPhotoUpdated?.(membre.id, photo_url);
     } catch (err) {
       console.error(err);
-      alert("Erreur lors de l'import de la photo.");
+      // Cause réelle affichée : un message générique masquait la raison
+      // (session expirée, policy RLS, réseau...).
+      alert(`Erreur : ${err?.message || err}`);
     } finally {
       setUploading(false);
     }

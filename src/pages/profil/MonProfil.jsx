@@ -47,6 +47,10 @@ export default function MonProfil() {
 
   const handlePhotoChange = async (e) => {
     const file = e.target.files?.[0];
+    // Réinitialise le champ : sans cela, rechoisir le MÊME fichier ne
+    // déclenche pas un second onChange (le navigateur considère que la
+    // valeur n'a pas changé), et l'import semblait alors ne rien faire.
+    e.target.value = '';
     if (!file || !membre) return;
     setUploading(true);
     setFeedback(null);
@@ -57,7 +61,9 @@ export default function MonProfil() {
       queryClient.invalidateQueries();
     } catch (err) {
       console.error(err);
-      setFeedback({ type: 'error', message: "Erreur lors de l'envoi de la photo." });
+      // On affiche la cause réelle : un message générique rendait
+      // l'import de photo impossible à diagnostiquer.
+      setFeedback({ type: 'error', message: `Erreur : ${err?.message || err}` });
     } finally {
       setUploading(false);
     }
