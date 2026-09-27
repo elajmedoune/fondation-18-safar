@@ -334,35 +334,36 @@ export const membresService = {
     });
     if (error) throw error;
     const { data } = bucket.getPublicUrl(path);
-
-    // Ménage de l'ancienne photo : sans cela, le bucket accumule un fichier
-    // par import. Une erreur de suppression n'est pas bloquante.
-    if (membreId) {
-      try {
-        const { data: current } = await supabase
-          .from('membres')
-          .select('photo_url')
-          .eq('id', membreId)
-          .single();
-        const oldPath = current?.photo_url ? current.photo_url.split('/').pop() : null;
-        if (oldPath && oldPath !== path && !oldPath.startsWith('temp-')) {
-          await bucket.remove([oldPath]);
-        }
-      } catch {
-        // l'ancien fichier reste : sans conséquence sur l'affichage
-      }
-    }
+    // Aucun ménage ici : l'ancien fichier ne peut être supprimé qu'APRÈS
+    // confirmation que la base pointe bien vers la nouvelle photo (voir
+    // update()). Supprimer avant l'écriture en base laisserait la base
+    // pointer sur un fichier disparu si l'enregistrement était annulé.
     return data.publicUrl;
   },
 
   async update(id, patch, { userId, campagneId } = {}) {
     let oldData = null;
-    if (userId) {
+    // La photo est lue avant l'écriture : elle sert à l'audit ET à supprimer
+    // l'ancien fichier une fois la nouvelle URL enregistrée en base.
+    if (userId || patch.photo_url) {
       const { data: before } = await supabase.from('membres').select('*').eq('id', id).single();
       oldData = before;
     }
     const { data, error } = await supabase.from('membres').update(patch).eq('id', id).select().single();
     if (error) throw error;
+    // Ménage de l'ancienne photo, uniquement maintenant que la base pointe
+    // vers la nouvelle. Chaque import écrit un fichier horodaté, donc sans
+    // cette suppression le bucket grossit à chaque changement de photo.
+    if (patch.photo_url && oldData?.photo_url && oldData.photo_url !== patch.photo_url) {
+      const oldPath = oldData.photo_url.split('/').pop();
+      if (oldPath && !oldPath.startsWith('temp-')) {
+        try {
+          await supabase.storage.from('membres-photos').remove([oldPath]);
+        } catch {
+          // l'ancien fichier reste : aucun impact sur l'affichage
+        }
+      }
+    }
     if (userId) {
       await auditLogsService.log({
         userId, action: 'membre.update', entity: 'membres',

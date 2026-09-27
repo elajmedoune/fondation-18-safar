@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Wallet, Calendar, Pencil, X } from 'lucide-react';
+import { FileDown, Wallet, Calendar, Pencil, X, Camera, Loader2 } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { membresService } from '../../services/membres.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { supabase } from '../../lib/supabaseClient.js';
+import { bustCache } from '../../lib/bustCache.js';
 import BackButton from '../../components/ui/BackButton.jsx';
 
 const MODES_PAIEMENT = [
@@ -74,6 +75,10 @@ export default function MembreProfil() {
   const [fonction, setFonction] = useState('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
 
   const { data: fiche, isLoading } = useQuery({
     queryKey: ['membre-fiche', id, campagneActive?.id],
@@ -149,8 +154,35 @@ export default function MembreProfil() {
     setSexe(fiche.sexe || '');
     setGroupeId(cm?.groupe?.id || '');
     setFonction(cm?.fonction || '');
+    setPhotoUrl('');
+    setPhotoPreview('');
     setEditing(true);
     setFeedback(null);
+  };
+
+  // L'upload part immédiatement à la sélection : l'aperçu est visible dans le
+  // formulaire, et l'URL n'est écrite en base qu'au clic sur "Enregistrer"
+  // (champ photo_url), avec le reste des modifications.
+  const handlePhotoPick = async (e) => {
+    const file = e.target.files?.[0];
+    // Réinitialise le champ : sans cela, resélectionner le même fichier ne
+    // déclencherait pas onChange.
+    e.target.value = '';
+    if (!file) return;
+    setUploadingPhoto(true);
+    setFeedback(null);
+    setPhotoPreview(URL.createObjectURL(file));
+    try {
+      const uploaded = await membresService.uploadPhoto(file, id);
+      setPhotoUrl(uploaded);
+      setPhotoPreview(uploaded);
+    } catch (err) {
+      console.error(err);
+      setPhotoPreview('');
+      setFeedback({ type: 'error', message: `Erreur : ${err?.message || err}` });
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const handleSave = async (e) => {
@@ -158,7 +190,12 @@ export default function MembreProfil() {
     setSaving(true);
     setFeedback(null);
     try {
-      await membresService.update(id, { nom, prenom, telephone: telephone || null, sexe: sexe || null }, { userId: user.id, campagneId: campagneActive.id });
+      // photo_url n'est envoyé que si une nouvelle photo a été importée : sinon
+      // on réécrirait la valeur existante et la purge de l'ancien fichier
+      // (faite dans update()) porterait sur le fichier courant.
+      const patch = { nom, prenom, telephone: telephone || null, sexe: sexe || null };
+      if (photoUrl) patch.photo_url = photoUrl;
+      await membresService.update(id, patch, { userId: user.id, campagneId: campagneActive.id });
       const campagneMembreId = fiche?.campagne_membres?.[0]?.id;
       if (campagneMembreId) {
         // La fonction est portée par campagne_membres (ex: "Adjoint président")
@@ -304,6 +341,34 @@ export default function MembreProfil() {
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-primary-800 dark:text-primary-300">Modifier les informations</h3>
             <button type="button" onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600 p-1 -mr-1"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="flex items-center gap-3 pb-1">
+            {photoPreview ? (
+              <img src={bustCache(photoPreview, 0)} alt="" className="h-16 w-16 rounded-full object-cover ring-2 ring-primary-300 dark:ring-primary-700 shrink-0" />
+            ) : fiche.photo_url ? (
+              <img src={fiche.photo_url} alt="" className="h-16 w-16 rounded-full object-cover ring-2 ring-primary-100 dark:ring-primary-900/40 shrink-0" />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/40 dark:to-primary-800/40 flex items-center justify-center text-primary-700 dark:text-primary-400 text-lg font-bold shrink-0">
+                {fiche.prenom?.[0]}{fiche.nom?.[0]}
+              </div>
+            )}
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={uploadingPhoto}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-primary-300 dark:border-primary-700 px-3 py-2 text-xs font-medium text-primary-800 dark:text-primary-300 hover:bg-primary-100/60 dark:hover:bg-primary-900/30 disabled:opacity-50 transition-all"
+              >
+                {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                {uploadingPhoto ? 'Import...' : (fiche.photo_url ? 'Changer la photo' : 'Ajouter une photo')}
+              </button>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-snug">
+                {photoUrl
+                  ? 'Photo importée. Cliquez sur « Enregistrer » pour valider.'
+                  : "L'image est envoyée immédiatement, puis validée avec le reste."}
+              </p>
+            </div>
+            <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoPick} disabled={uploadingPhoto} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input placeholder="Nom" value={nom} onChange={(e) => setNom(e.target.value)} required className={inputCls} />
