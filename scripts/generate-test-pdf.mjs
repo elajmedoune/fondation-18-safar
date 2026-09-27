@@ -18,7 +18,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   COLUMN_STYLES, STYLES, HEAD_STYLES, MARGES, ALTERNATE_ROW_STYLES,
-  TITRE_PHOTO, INDEX_PHOTO, HAUTEUR_LIGNE, SEUIL_TETE_UNE_LIGNE, LARGEUR_PAGE
+  TITRE_PHOTO, buildHead, INDEX_PHOTO, HAUTEUR_LIGNE, SEUIL_TETE_UNE_LIGNE, LARGEUR_PAGE
 } from '../src/lib/pdfTableLayout.js';
 
 const FCFA = (n) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
@@ -99,7 +99,7 @@ const body = COTISATIONS.map((c) => [
 const ecrits = new Set();
 autoTable(doc, {
   startY: doc.lastAutoTable.finalY + 12,
-  head: [[TITRE_PHOTO, ...TETE_COTISATIONS]],
+  head: buildHead(TETE_COTISATIONS),
   body,
   styles: STYLES,
   headStyles: HEAD_STYLES,
@@ -139,6 +139,17 @@ console.log(`  pages            : ${doc.internal.getNumberOfPages()}`);
 // 1. L'en-tête doit tenir sur une seule ligne.
 if (teteCotisations > SEUIL_TETE_UNE_LIGNE) {
   echouees(`en-tête sur plusieurs lignes (${teteCotisations.toFixed(1)} mm pour une ligne = ${HAUTEUR_LIGNE} mm)`);
+}
+
+// 1 bis. Contrôle STRUCTUREL, le plus important : l'en-tête doit être
+//      exactement UNE ligne de cellules. C'est le test qui manquait et qui a
+//      laissé passer le bug : un tableau plat est interprété comme 8 lignes
+//      d'en-tête, et la hauteur totale du bandeau vert n'en dit rien.
+const nbLignesTete = (doc.lastAutoTable.head || []).length;
+if (nbLignesTete !== 1) {
+  echouees(`l'en-tête est interprété comme ${nbLignesTete} lignes au lieu d'une : les mots sont empilés et les titres longs se coupent caractère par caractère`);
+} else {
+  console.log(`  lignes d'en-tête : ${nbLignesTete} (1 seule, mots côte à côte)`);
 }
 
 // 2. Il doit être identique à celui de la table qui fonctionne.

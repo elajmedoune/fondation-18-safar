@@ -10,7 +10,7 @@ import { invalidateAll } from '../../lib/invalidateAll.js';
 import { preloadPhotos, drawCirclePhoto } from '../../lib/pdfPhoto.js';
 import {
   INDEX_PHOTO, COLUMN_STYLES, STYLES, HEAD_STYLES,
-  MARGES, ALTERNATE_ROW_STYLES, TITRE_PHOTO
+  MARGES, ALTERNATE_ROW_STYLES, buildHead
 } from '../../lib/pdfTableLayout.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -251,7 +251,7 @@ export default function Cotisations() {
 
     return {
       startY,
-      head: [TITRE_PHOTO, ...head],
+      head: buildHead(head),
       body,
       styles: STYLES,
       headStyles: HEAD_STYLES,

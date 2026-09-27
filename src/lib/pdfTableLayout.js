@@ -36,6 +36,22 @@ export const PADDING = 2;
 // verte reste continue, et aucun mot n'a à tenir dans 11 mm.
 export const TITRE_PHOTO = '';
 
+/**
+ * Construit l'en-tête du tableau.
+ *
+ * Le double crochets est OBLIGATOIRE : autoTable attend une liste de LIGNES.
+ * Un tableau plat ["#", "Membre", ...] est interprété comme 8 lignes d'en-tête
+ * distinctes, chacune avec une seule cellule. Les mots se retrouvent alors
+ * empilés dans des cellules étroites, et les titres de plusieurs lettres
+ * ("Membre", "Montant", "Mode", "Date", "Note") se coupent caractère par
+ * caractère. Seuls "#" et "N°", assez courts, restaient lisibles — c'est
+ * l'indice qui a permis d'identifier le bug.
+ *
+ * Cette fonction est utilisée par l'application ET par le test : impossible
+ * que les deux divergent à nouveau sur ce point.
+ */
+export const buildHead = (titles) => [[TITRE_PHOTO, ...titles]];
+
 export const COLUMN_STYLES = { [INDEX_PHOTO]: { cellWidth: LARGEUR_PHOTO } };
 
 export const STYLES = { fontSize: POLICE, cellPadding: PADDING };
