@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { Camera, Loader2, Download } from 'lucide-react';
 import { membresService } from '../../services/membres.service.js';
 import { bustCache } from '../../lib/bustCache.js';
+import { useAuth } from '../../hooks/useAuth.js';
 
 const CARD_WIDTH = 480;
 const CARD_HEIGHT = 303;
@@ -311,6 +312,7 @@ async function loadAssets(photoUrl, qrCodeValue, photoRev) {
 export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhotoUpdated }) {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const { refreshMembre } = useAuth();
   const [exporting, setExporting] = useState(false);
   const [cardUrl, setCardUrl] = useState(null);
   // Copie locale de l'URL photo : mise à jour immédiatement après un import,
@@ -339,6 +341,9 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
       await membresService.update(membre.id, { photo_url });
       setPhotoUrl(photo_url);
       setPhotoRev((v) => v + 1);
+      // Rafraîchit le membre du contexte : le layout du bandeau affiche
+      // cette photo et ne la reverrait pas sans ce rechargement.
+      refreshMembre();
       onPhotoUpdated?.(membre.id, photo_url);
     } catch (err) {
       console.error(err);

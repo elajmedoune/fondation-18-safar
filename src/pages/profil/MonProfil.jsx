@@ -17,7 +17,7 @@ const ROLE_LABELS = {
 const inputCls = "w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm";
 
 export default function MonProfil() {
-  const { user, membre, roles } = useAuth();
+  const { user, membre, roles, refreshMembre } = useAuth();
   const { campagneActive } = useCampagneContext();
   const queryClient = useQueryClient();
 
@@ -71,6 +71,9 @@ export default function MonProfil() {
       setFeedback({ type: 'success', message: 'Photo mise à jour.' });
       setPhotoUrl(photo_url);
       setPhotoRev((v) => v + 1);
+      // Le layout lit le membre via le contexte : sans ce rafraîchissement,
+      // l'en-tête gardait l'ancienne photo jusqu'au rechargement complet.
+      await refreshMembre();
       queryClient.invalidateQueries();
     } catch (err) {
       console.error(err);

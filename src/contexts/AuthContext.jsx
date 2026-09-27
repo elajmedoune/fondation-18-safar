@@ -91,7 +91,12 @@ export function AuthProvider({ children }) {
     resetPasswordForEmail,
     updatePassword,
     signOut,
-    refreshRoles
+    refreshRoles,
+    // Recharge le membre depuis la base. Indispensable après une écriture
+    // (changement de photo) : le membre du contexte était figé au chargement
+    // de la page, donc le layout affichait une valeur périmée tant qu'on
+    // ne rechargeait pas l'onglet.
+    refreshMembre: () => loadProfil(session?.user?.id)
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
