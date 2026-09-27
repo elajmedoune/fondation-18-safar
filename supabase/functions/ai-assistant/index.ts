@@ -284,13 +284,13 @@ ${Object.entries(cotisationsByMois).map(([mois, v]) => `- ${mois}: ${v.total}FCF
 
 MEMBRES PAR GROUPE (les membres du bureau sont indiqués entre crochets - ils font partie des membres):
 TOTAL TOUS GROUPES CONFONDUS: ${membres.length} membre(s)
-${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}): ${ms.join(", ")}`).join("\n") || "Aucun"}
+${capList(Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}): ${ms.join(", ")}`), 15) || "Aucun"}
 
 MEMBRES AYANT COTISÉ (${membresAyantCotise.size}):
-${cotisations.map((c: any) => `- ${fmtName(c.membre)}: ${c.montant}FCFA (${c.mois_cotisation || ""})`).join("\n") || "Aucun"}
+${capList(cotisations.map((c: any) => `- ${fmtName(c.membre)}: ${c.montant}FCFA (${c.mois_cotisation || ""})`), 40) || "Aucun"}
 
 MEMBRES SANS COTISATION (${membresNonCotisants.length}):
-${membresNonCotisants.length > 0 ? membresNonCotisants.map(n => `- ${n}`).join("\n") : "Aucun"}
+${membresNonCotisants.length > 0 ? capList(membresNonCotisants.map(n => `- ${n}`), 40) : "Aucun"}
 
 QUÊTES (${quetes.length}):
 ${quetes.slice(0, 10).map((q: any) => `- ${q.lieu}: ${q.montant}FCFA${q.collecteur?.membre ? ` (${fmtName(q.collecteur.membre)})` : ""}`).join("\n") || "Aucune"}
@@ -304,7 +304,7 @@ ${depenses.slice(0, 5).map((d: any) => `Dépense: ${d.categorie} — ${d.montant
 
 ---
 REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
+${capList([...allNames].map(n => `- ${n}`), 150) || "Aucun"}`;
       }
 
       // ============================================================
@@ -421,7 +421,7 @@ ${quetes.map((q: any) => `- ${q.lieu}: ${q.montant}FCFA${q.collecteur?.membre ? 
 
 ---
 REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
+${capList([...allNames].map(n => `- ${n}`), 150) || "Aucun"}`;
       }
 
       // ============================================================
@@ -461,14 +461,14 @@ ${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
         contextData = `[SECRÉTAIRE - RÉUNIONS & MEMBRES] Campagne: ${campagne?.nom || ""}
 
 MEMBRES — NOMBRE TOTAL OFFICIEL: ${membres.length} (chiffre unique : membres simples ET membres du bureau, avec ou sans groupe ; les administrateurs n'en font pas partie):
-${Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):\n  ${ms.join("\n  ")}`).join("\n") || "Aucun membre"}
+${capList(Object.entries(membresByGroupe).map(([g, ms]) => `- ${g} (${ms.length}):\n  ${ms.join("\n  ")}`), 25) || "Aucun membre"}
 
 RÉUNIONS (${reunionsData.length}):
 ${reunionsText}
 
 ---
 REGISTRE DES NOMS (liste exhaustive - utilise UNIQUEMENT ces noms):
-${[...allNames].map(n => `- ${n}`).join("\n") || "Aucun"}`;
+${capList([...allNames].map(n => `- ${n}`), 150) || "Aucun"}`;
       }
 
       // ============================================================
@@ -569,8 +569,15 @@ RÈGLES DE RÉDACTION:
 - Formatage markdown strict: titres avec ##, valeurs importantes en **gras**, listes à puces.
 - Pour un compte rendu, utilise la réunion demandée (la plus récente sans CR si aucune n'est précisée).
 
-SI ON TE POSE UNE QUESTION HORS DU CONTEXTE DE L'APPLICATION (politique, sport, musique, actualités, etc.), réponds poliment:
-"Je suis l'assistant de la Fondation 18 Safar. Je peux t'aider avec les données de l'association (cotisations, dépenses, membres, réunions, etc.). Pour autre chose, je ne suis pas équipé."
+SI ON TE POSE UNE QUESTION HORS DU CONTEXTE DE L'APPLICATION (politique, sport, musique, actualités, etc.):
+- Refuse poliment en 1 à 2 phrases maximum.
+- Ne récite JAMAIS une phrase d'introduction préétablie : varie les formulations d'un message à l'autre.
+- Oriente vers ce que tu sais faire (finances, membres, réunions, cotisations).
+
+MESSAGES COURTS (salutations, remerciements, « ok », « d'accord », messages sans sens, saisie approximative):
+- Réponds en 1 à 2 phrases, de façon naturelle et chaleureuse.
+- VARIE tes formulations : ne commence jamais deux réponses de suite par la même accroche, ne répète pas la liste de tes capacités à chaque message.
+- Si la demande est trop vague ou illisible, invite doucement à préciser sans réciter un catalogue de fonctionnalités.
 
 IMPORTANT - ANTI-HALLUCINATION:
 - Tu dois UNIQUEMENT citer les noms de personnes qui apparaissent EXPLICITEMENT dans le "REGISTRE DES NOMS" du contexte.
@@ -586,38 +593,128 @@ IMPORTANT - ANTI-HALLUCINATION:
       });
     }
 
-    const body = {
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: contextData ? `${contextData}\n\n---\nQuestion: ${message}` : message },
-      ],
-      temperature: 0.3,
-      max_tokens: 3500,
-    };
+    // Extrait le délai d'attente (ms) indiqué par Groq dans un message de quota :
+// "Please try again in 4.671428571s." -> 4671
+function parseRetryDelay(groqData: any): number {
+  const msg = groqData?.error?.message || "";
+  const m = msg.match(/try again in\s+([0-9.]+)\s*s/i);
+  if (!m) return 0;
+  return Math.round(parseFloat(m[1]) * 1000);
+}
 
-    console.log("[ai] user:", userName, "role:", roleLabel, "msg:", message.slice(0, 80));
+// Tronque une liste de lignes en indicating le nombre d'éléments omis.
+// Le quota Groq gratuit est de 7000 tokens/min : le contexte est envoyé à
+// CHAQUE message, donc chaque ligne superflue est comptée à chaque question.
+function capList(lines: string[], max: number): string {
+  if (lines.length <= max) return lines.join("\n");
+  return lines.slice(0, max).join("\n") + `\n… (+${lines.length - max} autres)`;
+}
 
-    const groqRes = await fetch(GROQ_BASE, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+// Mots-clés signalant une question sur les DONNÉES de l'association. En
+// dehors de ceux-là (salutations, messages courts, saisie approximative), le
+// contexte complet n'est pas nécessaire : l'IA peut répondre sans le recevoir.
+// Le quota Groq gratuit étant très serré (7000 tokens/min, contexte envoyé à
+// chaque message), ne charger le contexte complet que si c'est utile divise
+// la consommation par ~4 sur les messages courts.
+const DATA_KEYWORDS = [
+  "rapport", "synthese", "synthèse", "compte rendu", "compte-rendu", "bilan",
+  "cotisation", "cotisations", "depense", "dépense", "depenses", "dépenses",
+  "don", "dons", "quete", "quête", "quetes", "quêtes", "finance", "financier",
+  "solde", "objectif", "membre", "membres", "groupe", "groupes", "reunion",
+  "réunion", "reunions", "réunions", "presence", "présence",
+  "assemblee", "assemblée", "combien", "montant", "total", "taux", "liste",
+  "qui", "quoi", "quand", "pourquoi", "analyse", "statistique", "pourcentage",
+  "evolution", "évolution", "resume", "résumé", "detail", "détail",
+];
 
-    const groqData = await groqRes.json();
+function needsFullContext(message: string): boolean {
+  const t = (message || "").toLowerCase();
+  if (t.length < 3) return false;
+  return DATA_KEYWORDS.some((k) => t.includes(k));
+}
 
-    if (!groqRes.ok) {
-      console.error("[groq] error:", groqRes.status, JSON.stringify(groqData));
-      return new Response(JSON.stringify({ error: "Erreur IA" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+// Modèles essayés dans l'ordre : le 1er est le principal, les suivants
+    // sont des replis (quota épuisé, modèle retiré, indisponibilité...).
+    // Liste vérifiée sur l'API Groq : llama-3.3-70b et llama-3.1-8b n'existent
+    // plus (404), d'où les replis ci-dessous.
+    const MODELS = [
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+      "qwen/qwen3.8-27b",
+    ];
+
+    // Contexte adaptatif : le gros contexte n'est transmis que si la question
+    // porte sur les données de l'association. Pour une salutation ou une
+    // saisie courte, on n'envoie qu'un résumé minimal — le quota Groq gratuit
+    // (7000 tokens/min) est vite saturé quand on renvoie tout à chaque message.
+    const fullContext = needsFullContext(message);
+    const lightContext = `Fondation 18 Safar. Aucune donnée détaillée n'est chargée pour ce message.`;
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: !contextData
+          ? message
+          : fullContext
+            ? `${contextData.slice(0, 14000)}\n\n---\nQuestion: ${message}`
+            : `${lightContext}\n\n---\nQuestion: ${message}`,
+      },
+    ];
+
+    console.log("[ai] user:", userName, "role:", roleLabel, "contexte:", fullContext ? "complet" : "reduit", "msg:", message.slice(0, 80));
+
+    let lastError = "";
+    for (const model of MODELS) {
+      // Sur quota (429), on RÉESSAIE LE MÊME modèle après le délai indiqué :
+      // les modèles partagent le quota de l'organisation, changer de modèle ne
+      // sert donc à rien et fait échouer les 3 en cascade.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const groqRes = await fetch(GROQ_BASE, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.3,
+            max_tokens: 3500,
+          }),
+        }).catch((e) => {
+          lastError = `reseau: ${(e as Error).message}`;
+          return null;
+        });
+
+        if (!groqRes) break;
+
+        const groqData = await groqRes.json().catch(() => ({}));
+
+        if (groqRes.ok) {
+          const reply = groqData.choices?.[0]?.message?.content || "Pas de réponse.";
+          if (model !== MODELS[0]) console.log("[ai] repli utilise:", model);
+          return new Response(JSON.stringify({ reply }), {
+            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        lastError = `${model} ${groqRes.status}: ${groqData?.error?.message || JSON.stringify(groqData)}`;
+        console.error("[groq] error:", lastError);
+
+        if (groqRes.status === 429 && attempt < 2) {
+          const wait = Math.min(parseRetryDelay(groqData) || 2000, 10000);
+          console.log("[ai] quota atteint, nouvelle tentative dans", wait, "ms");
+          await new Promise((r) => setTimeout(r, wait + 500));
+          continue;
+        }
+
+        // Erreurs définitives (ou quota persistant) : on passe au modèle suivant.
+        break;
+      }
     }
 
-    const reply = groqData.choices?.[0]?.message?.content || "Pas de réponse.";
-
-    return new Response(JSON.stringify({ reply }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: `Erreur IA — ${(lastError || "cause inconnue").slice(0, 300)}` }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("[ai] fatal:", err);
     return new Response(JSON.stringify({ error: (err as Error).message }), {

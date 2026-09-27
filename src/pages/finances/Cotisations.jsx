@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
+import { invalidateAll } from '../../lib/invalidateAll.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import ExportMenu from '../../components/ui/ExportMenu.jsx';
