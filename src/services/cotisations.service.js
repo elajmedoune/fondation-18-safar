@@ -18,7 +18,7 @@ export const cotisationsService = {
       .from('cotisations')
       .select('*, membre:membres(nom, prenom, numero_membre)')
       .eq('campagne_id', campagneId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
     if (error) throw error;
     return data;
   },

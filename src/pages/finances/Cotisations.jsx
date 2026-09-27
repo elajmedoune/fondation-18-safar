@@ -118,7 +118,23 @@ export default function Cotisations() {
       if (!map[key]) map[key] = [];
       map[key].push(c);
     });
-    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a));
+    // A l'interieur d'un mois : du premier cotisant au dernier (ordre
+    // chronologique), pour que la lecture de l'export suive la saisie.
+    Object.values(map).forEach((rows) => {
+      rows.sort((a, b) => {
+        const da = a.date_paiement || a.created_at || '';
+        const db = b.date_paiement || b.created_at || '';
+        if (da !== db) return da < db ? -1 : 1;
+        return (a.created_at || '') < (b.created_at || '') ? -1 : 1;
+      });
+    });
+    // Ordre chronologique des mois : le plus ancien en haut. Le tri etait
+    // decroissant, ce qui inversait l'ordre des cotisations dans les exports.
+    return Object.entries(map).sort(([a], [b]) => {
+      if (a === 'Non daté') return 1;
+      if (b === 'Non daté') return -1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
   }, [allCotisations]);
 
   const resetForm = () => { setMembreSelectionne(null); setQuery(''); setMontant(''); setModePaiement('especes'); setMoisCotisation(getCurrentMonth()); setNote(''); setFeedback(null); };
