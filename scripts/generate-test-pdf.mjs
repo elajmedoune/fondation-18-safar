@@ -152,9 +152,16 @@ if (nbLignesTete !== 1) {
   console.log(`  lignes d'en-tête : ${nbLignesTete} (1 seule, mots côte à côte)`);
 }
 
-// 2. Il doit être identique à celui de la table qui fonctionne.
-if (Math.abs(teteCotisations - teteMembres) > 0.6) {
-  echouees(`l'en-tête diverge de la référence "Membres" (${teteCotisations.toFixed(1)} mm contre ${teteMembres.toFixed(1)} mm)`);
+// 2. Comparaison avec la référence, exprimée en NOMBRE DE LIGNES DE TEXTE et
+//    non en millimètres : les deux tableaux n'ont pas la même police (Membres
+//    est resté à 7 pt, Cotisations est passé à 8 pt), donc une comparaison de
+//    hauteurs absolues ne mesurerait que le choix typographique. Ce qu'on veut
+//    vérifier, c'est que les deux en-têtes tiennent sur une seule ligne.
+const lignesTeteMembres = teteMembres / 6.8; // 6.8 = ligne unique à 7 pt + 2*2
+const lignesTeteCotisations = teteCotisations / HAUTEUR_LIGNE;
+console.log(`  lignes de texte    : Membres ${lignesTeteMembres.toFixed(1)} | Cotisations ${lignesTeteCotisations.toFixed(1)}`);
+if (Math.abs(lignesTeteMembres - lignesTeteCotisations) > 0.25) {
+  echouees(`l'en-tête n'a pas le même nombre de lignes que la référence "Membres" (${lignesTeteCotisations.toFixed(1)} contre ${lignesTeteMembres.toFixed(1)})`);
 }
 
 // 3. Aucun titre ne doit manquer. Ce test existe parce qu'un défaut était

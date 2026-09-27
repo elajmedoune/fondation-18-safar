@@ -29,7 +29,10 @@ export const VERT = [15, 118, 110];
 export const BLANC = 255;
 export const RAYONNE = [240, 253, 250];
 
-export const POLICE = 7;
+// 7 pt est la valeur d'origine, calquée sur le tableau "Membres". 8 pt est
+// plus confortable à la lecture ; l'en-tête hérite de cette valeur via
+// styles.fontSize, donc les titres grossissent avec le corps.
+export const POLICE = 8;
 export const PADDING = 2;
 
 // Titre de la colonne photo laissé vide : la cellule reste peinte, la bande
@@ -66,8 +69,10 @@ export const MARGES = { left: MARGE, right: MARGE };
 
 export const ALTERNATE_ROW_STYLES = { fillColor: RAYONNE };
 
-// Hauteur d'une ligne de texte unique, mesurée : 7 pt + 2*2 de padding.
-export const HAUTEUR_LIGNE = 6.8;
+// Hauteur d'une ligne de texte unique, déduite de la police : 0,4 mm par point
+// (mesuré : 7 pt -> 2,8 mm de ligne) plus le padding vertical. Le seuil suit
+// donc automatiquement un changement de POLICE.
+export const HAUTEUR_LIGNE = POLICE * 0.4 + PADDING * 2;
 
 // Un en-tête qui tient sur une seule ligne ne doit pas dépasser ce seuil.
 // Au-delà, c'est qu'un titre se répartit sur plusieurs lignes.
