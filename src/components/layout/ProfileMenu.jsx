@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { User, Settings, CalendarRange, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
+import { bustCache } from '../../lib/bustCache.js';
 
 const ROLE_LABELS = {
   membre: 'Membre',
@@ -33,14 +34,20 @@ export default function ProfileMenu() {
 
   const nomComplet = membre ? `${membre.prenom} ${membre.nom}` : user?.email;
 
+  // Storage sert les images avec Cache-Control: immutable : le navigateur ne
+  // les revalide jamais. Sans paramètre unique, une photo remplacée sur le
+  // même chemin resterait affichée indéfiniment. Recalculé uniquement quand
+  // l'URL change (useMemo) pour ne pas re-télécharger l'image à chaque rendu.
+  const photoUrl = useMemo(() => bustCache(membre?.photo_url, 0), [membre?.photo_url]);
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-full pl-1 pr-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
       >
-        {membre?.photo_url ? (
-          <img src={membre.photo_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+        {photoUrl ? (
+          <img src={photoUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
         ) : (
           <div className="h-8 w-8 rounded-full bg-primary-700 text-white flex items-center justify-center text-xs font-semibold">
             {initiales(membre, user?.email)}
