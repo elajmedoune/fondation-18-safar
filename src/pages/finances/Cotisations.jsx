@@ -7,6 +7,7 @@ import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
+import { preloadPhotos, drawCirclePhoto } from '../../lib/pdfPhoto.js';
 import usePersistedState from '../../hooks/usePersistedState.js';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import ExportMenu from '../../components/ui/ExportMenu.jsx';
@@ -201,7 +202,9 @@ export default function Cotisations() {
     } catch (err) { console.error(err); alert("Erreur lors de la suppression."); }
   };
 
+  // Colonne 0 = photo circulaire, dessinée via didDrawCell (voir drawTable).
   const buildTableRows = (rows) => rows.map((c, i) => [
+    '',
     i + 1,
     `${c.membre?.prenom} ${c.membre?.nom}`,
     c.membre?.numero_membre || '',
@@ -210,6 +213,45 @@ export default function Cotisations() {
     c.date_paiement ? new Date(c.date_paiement).toLocaleDateString('fr-FR') : '',
     c.note || ''
   ]);
+
+  // Clé de ligne : deux cotisations du même membre ne doivent pas partager la
+  // même entrée de cache, sinon la seconde hériterait de la photo de la
+  // première après un changement.
+  const photoKey = (c) => c.id;
+
+  /**
+   * Construit la configuration autoTable et dessine les photos circulaires.
+   * Les photos sont chargées avant l'appel : le rendu de didDrawCell est
+   * synchrone, on ne peut donc pas déclencher un fetch pendant le tracé.
+   */
+  const buildTableConfig = async (rows, head, { startY, fontSize, cellPadding }) => {
+    const photos = await preloadPhotos(rows, photoKey, (c) => c.membre?.photo_url);
+    return {
+      startY,
+      head: ['', ...head],
+      body: buildTableRows(rows),
+      styles: { fontSize, cellPadding },
+      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [240, 253, 250] },
+      margin: { left: 14, right: 14 },
+      columnStyles: { 0: { cellWidth: 12, minCellWidth: 12 } },
+      didDrawCell: (data) => {
+        if (data.section !== 'body' || data.column.index !== 0) return;
+        const { x, y, width, height } = data.cell;
+        const c = rows[data.row.index];
+        const d = Math.min(width - 2, height - 2, 9);
+        const initiales = `${c.membre?.prenom?.[0] || ''}${c.membre?.nom?.[0] || ''}`.toUpperCase();
+        drawCirclePhoto(
+          data.doc,
+          x + (width - d) / 2,
+          y + (height - d) / 2,
+          d,
+          photos.get(photoKey(c)),
+          initiales
+        );
+      }
+    };
+  };
 
   const renderPdfFooter = (doc, caNom) => {
     for (let i = 1; i <= doc.internal.getNumberOfPages(); i++) {
@@ -240,24 +282,22 @@ export default function Cotisations() {
     doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5); doc.line(14, 30, 196, 30);
 
     let startY = 40;
-    cotisationsParMois.forEach(([mois, rows]) => {
+    // Boucle for...of et non forEach : le chargement des photos est asynchrone
+    // (await), impossible dans un callback synchrone.
+    for (const [mois, rows] of cotisationsParMois) {
       const moisTotal = rows.reduce((s, r) => s + Number(r.montant), 0);
       if (startY > 250) { doc.addPage(); startY = 15; }
       doc.setFontSize(11); doc.setTextColor(15, 118, 110);
       doc.text(`${getMonthLabel(mois)} - ${formatFCFApdf(moisTotal)} (${rows.length})`, 14, startY);
       startY += 2;
 
-      autoTable(doc, {
-        startY,
-        head: [['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note']],
-        body: buildTableRows(rows),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [240, 253, 250] },
-        margin: { left: 14, right: 14 }
-      });
+      autoTable(doc, await buildTableConfig(
+        rows,
+        ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'],
+        { startY, fontSize: 8, cellPadding: 2 }
+      ));
       startY = doc.lastAutoTable.finalY + 8;
-    });
+    }
 
     renderPdfFooter(doc, ca.nom);
     doc.save(`cotisations-${ca.annee}.pdf`);
@@ -278,15 +318,11 @@ export default function Cotisations() {
     doc.text(`Campagne ${ca.nom || ca.annee} - ${rows.length} cotisation(s) - Total : ${formatFCFApdf(moisTotal)}`, 14, 25);
     doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5); doc.line(14, 30, 196, 30);
 
-    autoTable(doc, {
-      startY: 32,
-      head: [['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date paiement', 'Note']],
-      body: buildTableRows(rows),
-      styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [240, 253, 250] },
-      margin: { left: 14, right: 14 }
-    });
+    autoTable(doc, await buildTableConfig(
+      rows,
+      ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date paiement', 'Note'],
+      { startY: 32, fontSize: 9, cellPadding: 3 }
+    ));
 
     renderPdfFooter(doc, ca.nom);
     const slug = mois === 'Non daté' ? 'non-date' : mois;
