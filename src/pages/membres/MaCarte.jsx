@@ -24,7 +24,7 @@ export default function MaCarte() {
 
   return (
     <div className="max-w-sm mx-auto">
-      <CarteMembre membre={membre} groupeNom={cm?.groupe?.nom} fonction={cm?.fonction} annee={campagneActive?.annee} />
+      <CarteMembre membre={membre} groupeNom={cm?.groupe?.nom} fonction={cm?.fonctionAffichee ?? cm?.fonction} annee={campagneActive?.annee} />
     </div>
   );
 }

@@ -9,6 +9,24 @@ import heic2any from 'heic2any';
 // pourrait sinon altérer la logique du filtre).
 const sanitizeSearch = (s) => s.replace(/[,()"*]/g, ' ').trim();
 
+// Libellé du rôle du bureau, utilisé sur les cartes.
+const BUREAU_LABELS = { president: 'Président', tresorier: 'Trésorier', secretaire: 'Secrétaire' };
+
+// Libellé affiché sur la carte, par ordre de priorité :
+//   1. rôle du bureau (Président / Trésorier / Secrétaire)
+//   2. responsable de groupe  -> "Resp. NomDuGroupe"
+//   3. fonction brute enregistrée dans la base
+// Partagé entre la liste des membres et la carte personnelle ("Ma carte") afin
+// que les deux affichent exactement le même libellé pour un même membre.
+export function computeFonctionAffichee(fiche, roleBureau, isResponsable) {
+  return (
+    (roleBureau && BUREAU_LABELS[roleBureau]) ||
+    (isResponsable ? `Resp. ${fiche?.groupe?.nom || 'groupe'}` : null) ||
+    fiche?.fonction ||
+    null
+  );
+}
+
 // Convertit une image en JPEG recompressé (via canvas) pour un affichage
 // universel dans <img> sur tous les navigateurs.
 async function photoToJpeg(file, maxSide = 1600) {
@@ -92,7 +110,6 @@ export const membresService = {
     ]);
     if (rolesErr) throw rolesErr;
 
-    const ROLE_LABELS = { president: 'Président', tresorier: 'Trésorier', secretaire: 'Secrétaire' };
     const ROLE_PRIORITY = ['president', 'tresorier', 'secretaire'];
 
     // Rôle bureau le plus prioritaire par user_id (campagne active uniquement)
@@ -129,11 +146,7 @@ export const membresService = {
       .map((f) => {
         const m = f.membre || {};
         const roleBureau = m.user_id ? roleByUserId.get(m.user_id) : null;
-        const fonctionAffichee =
-          (roleBureau && ROLE_LABELS[roleBureau]) ||
-          (responsableIds.has(m.id) ? `Resp. ${f.groupe?.nom || 'groupe'}` : null) ||
-          f.fonction ||
-          null;
+        const fonctionAffichee = computeFonctionAffichee(f, roleBureau, responsableIds.has(m.id));
         return { ...f, fonctionAffichee, _roleBureau: roleBureau || null };
       });
   },
@@ -177,6 +190,36 @@ export const membresService = {
       .eq('campagne_membres.campagne_id', campagneId)
       .maybeSingle();
     if (error) throw error;
+    if (!data) return data;
+
+    // Même calcul de libellé que pour la liste des membres, sinon "Ma carte"
+    // affiche la fonction brute là où CartesMembres affiche "Resp. Groupe".
+    const fiche = data.campagne_membres?.[0];
+    if (fiche) {
+      const [bureauRoles, responsables] = await Promise.all([
+        data.user_id
+          ? supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', data.user_id)
+              .eq('campagne_id', campagneId)
+              .in('role', ['president', 'tresorier', 'secretaire'])
+          : Promise.resolve({ data: [] }),
+        supabase
+          .from('campagne_groupe_responsables')
+          .select('membre_id')
+          .eq('campagne_id', campagneId)
+          .eq('membre_id', membreId),
+      ]);
+
+      const roleBureau = (bureauRoles.data || [])[0]?.role || null;
+      const isResponsable = (responsables.data || []).length > 0;
+      data.campagne_membres[0].fonctionAffichee = computeFonctionAffichee(
+        fiche,
+        roleBureau,
+        isResponsable
+      );
+    }
     return data;
   },
 

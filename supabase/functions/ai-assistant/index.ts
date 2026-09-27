@@ -17,9 +17,25 @@ function fmtName(m: any): string {
   return full || "[Membre inconnu]";
 }
 
-function fmtPct(part: number, total: number): string {
-  if (total <= 0) return "0%";
-  return Math.round(part / total * 100) + "%";
+// Taux d'atteinte d'un objectif.
+// Une cible nulle (ou absente) n'est pas une base de calcul : renvoyer "0%"
+// ferait croire a un echec alors qu'aucun objectif n'a ete defini. On le dit
+// explicitement pour que le modele n'invente pas de pourcentage.
+function fmtPct(part: number, total: number | null): string {
+  if (total == null || Number(total) <= 0) return "aucun objectif défini";
+  return Math.round(part / Number(total) * 100) + "%";
+}
+
+// Libelle lisible de l'objectif, utilisable dans le contexte.
+function fmtObjectif(total: number | null): string {
+  if (total == null || Number(total) <= 0) return "aucun objectif défini";
+  return `${Number(total)}FCFA`;
+}
+
+// Normalise un objectif global : null si la cible est nulle ou negative.
+function normalizeObjectif(brut: any): number | null {
+  const n = Number(brut || 0);
+  return n > 0 ? n : null;
 }
 
 const PAGE_SIZE = 1000;
@@ -204,7 +220,7 @@ Deno.serve(async (req) => {
         const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
         const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne?.objectif_global || 0);
+        const objectif = normalizeObjectif(campagne?.objectif_global);
 
         const depensesByCat: Record<string, number> = {};
         depenses.forEach((d: any) => { depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant); });
@@ -265,14 +281,14 @@ Deno.serve(async (req) => {
 
         contextData = `[ADMIN - ACCÈS COMPLET] Fondation 18 Safar
 Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""}) | Statut: ${campagne?.statut || ""}
-Objectif: ${objectif}FCFA | Cotisation H: ${campagne?.cotisation_homme || 0}FCFA | F: ${campagne?.cotisation_femme || 0}FCFA
+Objectif: ${fmtObjectif(objectif)} | Cotisation H: ${campagne?.cotisation_homme || 0}FCFA | F: ${campagne?.cotisation_femme || 0}FCFA
 
 CHIFFRES:
 - Cotisations: ${tc}FCFA (${cotisations.length} ops)
 - Dépenses: ${td}FCFA (${depenses.length} ops)
 - Dons: ${tdon}FCFA (${dons.length} ops)
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
-- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
+- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)}
 - NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE = page Membres + Dashboard): ${membres.length}
 - NOTE: Il n'existe qu'UN SEUL chiffre de membres : les membres rattachés à la campagne active (simples ET bureau), avec ou sans groupe. L'administrateur est indépendant des campagnes et ne fait PAS partie des membres. Toute autre décomposition ("membres actifs", "membres de base", "membres hors campagne"...) est INTERDITE.
 
@@ -334,13 +350,24 @@ ${capList([...allNames].map(n => `- ${n}`), 150) || "Aucun"}`;
         const td = depenses.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
-        const objectif = Number(campagne?.objectif_global || 0);
+        // Objectif de la campagne : un montant 0 ou négatif n'est pas une
+        // cible exploitable. On l'ignore pour éviter que le modèle calcule un
+        // taux d'atteinte sur une base nulle (et affiche "0 % atteint").
+        const objectifBrut = Number(campagne?.objectif_global || 0);
+        const objectif = objectifBrut > 0 ? objectifBrut : null;
 
-        const objectifsText = objectifs.map((o: any) => `${o.activite_nom || "Global"}: ${o.montant_cible}FCFA`).join(", ");
+        // Idem pour les objectifs détaillés : on ne transmet que les cibles
+        // strictement positives.
+        const objectifsValides = (objectifs || []).filter(
+          (o: any) => Number(o.montant_cible) > 0
+        );
+        const objectifsText = objectifsValides
+          .map((o: any) => `${o.activite_nom || "Global"}: ${Number(o.montant_cible)}FCFA`)
+          .join(", ");
         const reunionsAvecCR = reunions.filter((r: any) => r.compte_rendu).length;
 
         contextData = `[PRÉSIDENT - VUE D'ENSEMBLE] Fondation 18 Safar
-Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""}) | Objectif: ${objectif}FCFA
+Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""}) | Objectif: ${fmtObjectif(objectif)}
 
 CHIFFRES:
 - Cotisations: ${tc}FCFA (${cotisations.length} ops)
@@ -348,7 +375,7 @@ CHIFFRES:
 - Dons: ${tdon}FCFA (${dons.length} ops)
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
 - Solde: ${tc + tdon + tq - td}FCFA
-- Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
+- Objectif: ${fmtPct(tc + tdon + tq, objectif)}
 - NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
 - Réunions: ${reunions.length} (${reunionsAvecCR} avec CR)
 
@@ -375,7 +402,7 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
         const tdon = dons.reduce((s: number, d: any) => s + Number(d.montant), 0);
         const tq = quetes.reduce((s: number, q: any) => s + Number(q.montant), 0);
         const solde = tc + tdon + tq - td;
-        const objectif = Number(campagne?.objectif_global || 0);
+        const objectif = normalizeObjectif(campagne?.objectif_global);
 
         const depensesByCat: Record<string, number> = {};
         depenses.forEach((d: any) => { depensesByCat[d.categorie] = (depensesByCat[d.categorie] || 0) + Number(d.montant); });
@@ -391,7 +418,7 @@ OBJECTIFS: ${objectifsText || "Aucun"}`;
         const allNames = new Set<string>();
         cotisations.forEach((c: any) => { if (c.membre?.prenom || c.membre?.nom) allNames.add(fmtName(c.membre)); });
 
-        contextData = `[TRÉSORIER - FINANCES] Campagne: ${campagne?.nom || ""} | Objectif: ${objectif}FCFA
+        contextData = `[TRÉSORIER - FINANCES] Campagne: ${campagne?.nom || ""} | Objectif: ${fmtObjectif(objectif)}
 
 CHIFFRES:
 - NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
@@ -399,7 +426,7 @@ CHIFFRES:
 - Dépenses: ${td}FCFA (${depenses.length} ops)
 - Dons: ${tdon}FCFA (${dons.length} ops)
 - Quêtes: ${tq}FCFA (${quetes.length} ops)
-- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)} atteint
+- Solde: ${solde}FCFA | Objectif: ${fmtPct(tc + tdon + tq, objectif)}
 
 DÉPENSES PAR CATÉGORIE:
 ${Object.entries(depensesByCat).sort((a, b) => b[1] - a[1]).map(([cat, m]) => `- ${cat}: ${m}FCFA (${fmtPct(m, td)})`).join("\n") || "Aucune"}
@@ -480,7 +507,7 @@ ${capList([...allNames].map(n => `- ${n}`), 150) || "Aucun"}`;
         const campagne = campagneRes.data;
 
         contextData = `[MEMBRE] Campagne: ${campagne?.nom || ""} (${campagne?.annee || ""})
-Objectif: ${campagne?.objectif_global || 0}FCFA
+Objectif: ${fmtObjectif(normalizeObjectif(campagne?.objectif_global))}
 NOMBRE TOTAL DE MEMBRES (CHIFFRE OFFICIEL UNIQUE): ${membres.length}
 Statut: ${campagne?.statut || ""}`;
       }
@@ -568,6 +595,11 @@ RÈGLES DE RÉDACTION:
 - Reste factuel, précis et professionnel. Chiffres en FCFA formatés avec séparateurs de milliers.
 - Formatage markdown strict: titres avec ##, valeurs importantes en **gras**, listes à puces.
 - Pour un compte rendu, utilise la réunion demandée (la plus récente sans CR si aucune n'est précisée).
+
+OBJECTIFS FINANCIERS:
+- Si le contexte indique "Objectif: aucun objectif défini" (ou une cible à 0), n'invente JAMAIS de taux d'atteinte ni de pourcentage.
+- Écris explicitement qu'aucun objectif financier n'a été défini pour la campagne, et propose de le renseigner.
+- Ne présente jamais "0 % atteint" : une cible nulle n'est pas un objectif.
 
 SI ON TE POSE UNE QUESTION HORS DU CONTEXTE DE L'APPLICATION (politique, sport, musique, actualités, etc.):
 - Refuse poliment en 1 à 2 phrases maximum.

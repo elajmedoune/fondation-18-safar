@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { Camera, Loader2, Download } from 'lucide-react';
 import { membresService } from '../../services/membres.service.js';
+import { useRole } from '../../hooks/useRole.js';
+import { useAuth } from '../../hooks/useAuth.js';
 
 const CARD_WIDTH = 480;
 const CARD_HEIGHT = 303;
@@ -318,6 +320,17 @@ async function loadAssets(photoUrl, qrCodeValue, photoRev) {
 
 export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhotoUpdated }) {
   const fileInputRef = useRef(null);
+  const { hasRole } = useRole();
+  const { membre: currentMembre } = useAuth();
+
+  // Le bucket photos n'autorise l'écriture qu'au bureau/administrateur, ou au
+  // membre pour sa PROPRE photo (cf. migration
+  // 20260927_storage_photos_restrict_write.sql). On masque le bouton plutot
+  // que d'afficher une erreur RLS à l'utilisateur.
+  const estBureau = hasRole(['administrateur', 'president', 'tresorier', 'secretaire']);
+  const estSaPropreCarte =
+    !!currentMembre?.id && currentMembre.id === membre?.id;
+  const peutImprimerPhoto = estBureau || estSaPropreCarte;
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [cardUrl, setCardUrl] = useState(null);
@@ -417,8 +430,10 @@ export default function CarteMembre({ membre, groupeNom, fonction, annee, onPhot
               </div>
             )}
 
-            {/* Bouton photo superposé au centre de la photo */}
-            {cardUrl && (
+            {/* Bouton photo superposé au centre de la photo.
+                Masqué si l'utilisateur n'a pas le droit d'écrire dans le
+                bucket photos (évite une erreur RLS à l'import). */}
+            {cardUrl && peutImprimerPhoto && (
               <button
                 type="button"
                 onClick={handlePickPhoto}
