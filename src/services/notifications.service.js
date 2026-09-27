@@ -83,14 +83,27 @@ export const notificationsService = {
   // Helper : notifier le bureau de la campagne active (+ admins globaux).
   // Règle : seul "administrateur" est global ; les autres rôles du bureau
   // ne valent que pour leur campagne.
+  //
+  // On NE construit volontairement aucun filtre PostgREST de type
+  // "or(and(...))" : cette syntaxe est fragile (parenthèses imbriquées,
+  // valeur null interpolée en chaîne) et a provoqué des 400
+  // "invalid input syntax for type uuid" puis "unexpected (". Le nombre de
+  // rôles bureau est très faible : on lit les lignes concernées avec un
+  // simple .in() et on filtre la campagne en JavaScript, sans ambiguïté.
   async notifyBureau(campagneId, { titre, message, type = 'info', entity = null, entityId = null }) {
     const { data: roles } = await supabase
       .from('user_roles')
-      .select('user_id')
-      .or(`and(role.in.(president,tresorier,secretaire),campagne_id.eq.${campagneId}),and(role.eq.administrateur,campagne_id.is.null)`);
+      .select('user_id, role, campagne_id')
+      .in('role', ['president', 'tresorier', 'secretaire', 'administrateur']);
 
     if (!roles || roles.length === 0) return;
-    const uniqueUserIds = [...new Set(roles.map((r) => r.user_id))];
+
+    const cibles = roles.filter((r) =>
+      r.role === 'administrateur' ? r.campagne_id == null : r.campagne_id === campagneId
+    );
+    if (cibles.length === 0) return;
+
+    const uniqueUserIds = [...new Set(cibles.map((r) => r.user_id))];
 
     const inserts = uniqueUserIds.map((uid) => ({
       user_id: uid,

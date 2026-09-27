@@ -86,16 +86,22 @@ export default function MembreProfil() {
     queryFn: async () => {
       if (!fiche?.user_id || !campagneActive?.id) return null;
       // Bureau = rôle porté par la campagne active ; seul "administrateur" est global.
+      // Filtre en JavaScript plutôt qu'en "or(and(...))" PostgREST : même logique
+      // que notifications.service.js, sans la syntaxe de filtre imbriqué fragile.
       const { data, error } = await supabase
         .from('user_roles')
-        .select('role')
+        .select('role, campagne_id')
         .eq('user_id', fiche.user_id)
-        .or(`and(role.in.(president,tresorier,secretaire),campagne_id.eq.${campagneActive.id}),and(role.eq.administrateur,campagne_id.is.null)`);
+        .in('role', ['president', 'tresorier', 'secretaire', 'administrateur']);
       if (error) throw error;
       if (!data?.length) return null;
+      const pertinent = data.filter((r) =>
+        r.role === 'administrateur' ? r.campagne_id == null : r.campagne_id === campagneActive.id
+      );
+      if (!pertinent.length) return null;
       const PRIORITY = ['administrateur', 'president', 'tresorier', 'secretaire'];
       const LABELS = { administrateur: 'Administrateur', president: 'Président', tresorier: 'Trésorier', secretaire: 'Secrétaire' };
-      const best = PRIORITY.find((r) => data.some((d) => d.role === r));
+      const best = PRIORITY.find((r) => pertinent.some((d) => d.role === r));
       return best ? LABELS[best] : null;
     },
     enabled: !!fiche?.user_id && !!campagneActive?.id
