@@ -2,7 +2,7 @@
 //
 //   node scripts/generate-test-pdf.mjs
 //
-// Produit dist/cotisations-test.pdf (données fictives) et sort en code 1 si
+// Produit preview/cotisations-test.pdf (données fictives) et sort en code 1 si
 // une régression est détectée : en-tête coupé caractère par caractère, ligne
 // trop haute, tableau hors page.
 //
@@ -153,8 +153,10 @@ for (const v of VARIANTES) {
   }
 }
 
-mkdirSync('dist', { recursive: true });
-const sortie = 'dist/cotisations-test.pdf';
+// Volontairement HORS de dist/ : « vite build » vide dist/ à chaque build et
+// le fichier de test disparaissait avant qu'on puisse l'ouvrir.
+mkdirSync('preview', { recursive: true });
+const sortie = 'preview/cotisations-test.pdf';
 writeFileSync(sortie, Buffer.from(doc.output('arraybuffer')));
 
 console.log(`\nPDF écrit : ${sortie}`);

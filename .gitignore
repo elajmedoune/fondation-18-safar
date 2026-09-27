@@ -5,3 +5,6 @@ dist
 
 # Supabase CLI: fichiers temporaires/cache de la CLI
 supabase/.temp/
+
+# PDF de test de mise en page (scripts/generate-test-pdf.mjs)
+preview/
