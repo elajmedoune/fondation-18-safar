@@ -219,22 +219,43 @@ export default function Cotisations() {
   // première après un changement.
   const photoKey = (c) => c.id;
 
+  // Largeurs en mm. La largeur utile est 210 - 14 - 14 = 182.
+  // Colonnes : photo, #, Membre, N°, Montant, Mode, Date, Note.
+  const WIDTHS_COMPACT = {
+    0: { cellWidth: 9 }, 1: { cellWidth: 7 }, 2: { cellWidth: 34 },
+    3: { cellWidth: 11 }, 4: { cellWidth: 20 }, 5: { cellWidth: 15 },
+    6: { cellWidth: 15 }, 7: { cellWidth: 'auto' }
+  };
+  // Version lisible : caractères plus grands, donc colonnes plus larges.
+  // La colonne Note se rabat sur le reste.
+  const WIDTHS_ROOMY = {
+    0: { cellWidth: 11 }, 1: { cellWidth: 8 }, 2: { cellWidth: 40 },
+    3: { cellWidth: 13 }, 4: { cellWidth: 24 }, 5: { cellWidth: 19 },
+    6: { cellWidth: 19 }, 7: { cellWidth: 'auto' }
+  };
+
   /**
    * Construit la configuration autoTable et dessine les photos circulaires.
    * Les photos sont chargées avant l'appel : le rendu de didDrawCell est
    * synchrone, on ne peut donc pas déclencher un fetch pendant le tracé.
+   *
+   * Les largeurs de colonnes sont fixées explicitement. Sans cela, la colonne
+   * photo prend sa part et les autres se partagent le reste à parts égales :
+   * les en-têtes les plus larges ("Montant", "Date paiement") ne tiennent
+   * alors plus dans leur cellule, et autoTable coupe un mot trop long
+   * caractère par caractère ("M o n t a n t").
    */
-  const buildTableConfig = async (rows, head, { startY, fontSize, cellPadding }) => {
+  const buildTableConfig = async (rows, head, { startY, fontSize, cellPadding, columnStyles }) => {
     const photos = await preloadPhotos(rows, photoKey, (c) => c.membre?.photo_url);
     return {
       startY,
       head: ['', ...head],
       body: buildTableRows(rows),
-      styles: { fontSize, cellPadding },
+      styles: { fontSize, cellPadding, overflow: 'linebreak' },
       headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [240, 253, 250] },
       margin: { left: 14, right: 14 },
-      columnStyles: { 0: { cellWidth: 12, minCellWidth: 12 } },
+      columnStyles,
       didDrawCell: (data) => {
         if (data.section !== 'body' || data.column.index !== 0) return;
         const { x, y, width, height } = data.cell;
@@ -294,7 +315,7 @@ export default function Cotisations() {
       autoTable(doc, await buildTableConfig(
         rows,
         ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'],
-        { startY, fontSize: 8, cellPadding: 2 }
+        { startY, fontSize: 8, cellPadding: 2, columnStyles: WIDTHS_COMPACT }
       ));
       startY = doc.lastAutoTable.finalY + 8;
     }
@@ -320,8 +341,10 @@ export default function Cotisations() {
 
     autoTable(doc, await buildTableConfig(
       rows,
-      ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date paiement', 'Note'],
-      { startY: 32, fontSize: 9, cellPadding: 3 }
+      // "Date" et non "Date paiement" : l'en-tête complet ne tient pas dans
+      // la largeur de colonne et serait coupé caractère par caractère.
+      ['#', 'Membre', 'N°', 'Montant', 'Mode', 'Date', 'Note'],
+      { startY: 32, fontSize: 9, cellPadding: 3, columnStyles: WIDTHS_ROOMY }
     ));
 
     renderPdfFooter(doc, ca.nom);
