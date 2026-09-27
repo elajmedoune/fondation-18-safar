@@ -2,3 +2,6 @@ node_modules
 dist
 .env
 .DS_Store
+
+# Supabase CLI: fichiers temporaires/cache de la CLI
+supabase/.temp/
