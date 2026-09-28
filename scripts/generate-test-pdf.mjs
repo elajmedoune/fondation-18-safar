@@ -18,7 +18,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   COLUMN_STYLES, STYLES, HEAD_STYLES, MARGES, ALTERNATE_ROW_STYLES,
-  TITRE_PHOTO, buildHead, INDEX_PHOTO, HAUTEUR_LIGNE, SEUIL_TETE_UNE_LIGNE, LARGEUR_PAGE
+  TITRE_PHOTO, buildHead, INDEX_PHOTO, HAUTEUR_LIGNE, SEUIL_TETE_UNE_LIGNE, LARGEUR_PAGE,
+  TAILLE_PHOTO
 } from '../src/lib/pdfTableLayout.js';
 
 const FCFA = (n) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
@@ -97,6 +98,8 @@ const body = COTISATIONS.map((c) => [
 ]);
 
 const ecrits = new Set();
+const lignesCoupees = new Set();
+const diameters = new Set();
 autoTable(doc, {
   startY: doc.lastAutoTable.finalY + 12,
   head: buildHead(TETE_COTISATIONS),
@@ -108,11 +111,17 @@ autoTable(doc, {
   columnStyles: COLUMN_STYLES,
   didDrawCell: (d) => {
     if (d.cell.text) {
-      ecrits.add((Array.isArray(d.cell.text) ? d.cell.text.join(' ') : String(d.cell.text)).trim());
+      const lignes = Array.isArray(d.cell.text) ? d.cell.text : [d.cell.text];
+      ecrits.add(lignes.join(' ').trim());
+      // Détection PRÉCISE du retour à la ligne : une cellule coupée contient
+      // plusieurs éléments dans d.cell.text. On ne peut pas se fier à la
+      // hauteur de la ligne, qui dépend de la taille de la photo.
+      if (lignes.length > 1) lignesCoupees.add(d.row.raw);
     }
     if (d.section !== 'body' || d.column.index !== INDEX_PHOTO) return;
     const { x, y, width, height } = d.cell;
-    const dia = Math.min(width - 2, height - 2, 9);
+    const dia = Math.min(width - 2, height - 2, TAILLE_PHOTO);
+    diameters.add(dia);
     // Le nom est lu dans d.row.raw : d.row.index est absent quand une ligne
     // est coupée par un saut de page, ce qui lève une TypeError et casse
     // l'export global.
@@ -133,7 +142,10 @@ const corps = lignes.slice(1);
 console.log('\n[cible] tableau "Cotisations" (config de l\'application)');
 console.log(`  en-tête          : ${teteCotisations.toFixed(1)} mm`);
 console.log(`  bandeau vert     : ${(teteCotisations / HAUTEUR_LIGNE).toFixed(1)} ligne(s) de texte`);
-console.log(`  lignes           : ${corps.length}, dont ${corps.filter((l) => l.height > SEUIL_TETE_UNE_LIGNE).length} sur plusieurs lignes`);
+// Le MAX et non le minimum : une ligne coupée par un saut de page n'a qu'une
+// fraction de sa hauteur, et donne un faux petit diamètre.
+const dia = Math.max(...diameters);
+console.log(`  lignes           : ${corps.length} (hauteur ${corps[0]?.height.toFixed(1)} mm), dont ${lignesCoupees.size} avec un texte coupe`);
 console.log(`  pages            : ${doc.internal.getNumberOfPages()}`);
 
 // 1. L'en-tête doit tenir sur une seule ligne.
@@ -184,6 +196,20 @@ if (coupes.length) {
   echouees(`valeurs coupées sur plusieurs lignes : ${coupes.map((v) => `"${v}"`).join(', ')}`);
 } else {
   console.log('  N° / Date / Montant / Mode : sur une seule ligne');
+}
+
+// 4 bis. Aucune valeur ne doit etre coupee sur plusieurs lignes.
+if (lignesCoupees.size) {
+  echouees(`${lignesCoupees.size} ligne(s) avec un texte coupe alors qu'une seule ligne est disponible`);
+}
+
+// 4 ter. La photo doit atteindre la taille demandee : elle est bornee par la
+//       hauteur de ligne, donc une ligne trop basse reduirait le diametre
+//       sans aucun signe visible.
+if (dia < TAILLE_PHOTO - 0.1) {
+  echouees(`photo de ${dia.toFixed(1)} mm au lieu de ${TAILLE_PHOTO} mm : la hauteur de ligne la bride`);
+} else {
+  console.log(`  photo            : ${dia.toFixed(1)} mm de diametre`);
 }
 
 // 5. Le tableau doit tenir dans la page.

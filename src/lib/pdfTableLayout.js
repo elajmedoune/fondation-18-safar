@@ -22,7 +22,20 @@ export const MARGE = 10;
 export const LARGEUR_PAGE = 210;
 export const LARGEUR_UTILE = LARGEUR_PAGE - MARGE * 2; // 190
 export const INDEX_PHOTO = 0;
-export const LARGEUR_PHOTO = 11;
+
+// Diamètre du rond de photo, en mm. Le diamètre réel est
+// min(largeur - 2, hauteur de ligne - 2, TAILLE_PHOTO) : il est donc borné par
+// la HAUTEUR de ligne. Une photo de 9 mm dans une ligne de 7,2 mm (police 8 pt)
+// donnait en réalité 5,2 mm. D'où LARGEUR_PHOTO et HAUTEUR_LIGNE_PHOTO.
+//
+// 13 mm suffit pour un rond de 8 mm : la largeur n'est pas le facteur limitant.
+// Mesuré : à 14 mm les colonnes de texte se resserrent au point de couper
+// "Elhadji Medoune Gningue" et "Enregistrer par Medoune Sagna" sur deux lignes
+// (10 cellules coupées). À 13 mm : 0 cellule coupée, et le tableau tient sur
+// une page au lieu de deux.
+export const TAILLE_PHOTO = 8;
+export const LARGEUR_PHOTO = 13;
+export const HAUTEUR_LIGNE_PHOTO = 10;
 
 // Palette identique à celle du tableau "Membres" (#0F766E).
 export const VERT = [15, 118, 110];
@@ -55,7 +68,9 @@ export const TITRE_PHOTO = '';
  */
 export const buildHead = (titles) => [[TITRE_PHOTO, ...titles]];
 
-export const COLUMN_STYLES = { [INDEX_PHOTO]: { cellWidth: LARGEUR_PHOTO } };
+export const COLUMN_STYLES = {
+  [INDEX_PHOTO]: { cellWidth: LARGEUR_PHOTO, minCellHeight: HAUTEUR_LIGNE_PHOTO },
+};
 
 export const STYLES = { fontSize: POLICE, cellPadding: PADDING };
 
