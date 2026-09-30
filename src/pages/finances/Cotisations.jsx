@@ -230,9 +230,13 @@ export default function Cotisations() {
     [cotisationsFiltrees]
   );
 
+  // Liste des mois disponibles : elle se construit sur TOUTES les cotisations,
+  // pas sur la liste filtree. Construite sur la liste filtree, le menu ne
+  // proposerait que le mois deja choisi, et les mois precedents deviendraient
+  // inaccessibles.
   const cotisationsParMois = useMemo(() => {
     const map = {};
-    cotisationsFiltrees.forEach((c) => {
+    allCotisations.forEach((c) => {
       const key = c.mois_cotisation || c.date_paiement?.slice(0, 7) || 'Non daté';
       if (!map[key]) map[key] = [];
       map[key].push(c);
@@ -254,7 +258,22 @@ export default function Cotisations() {
       if (b === 'Non daté') return -1;
       return a < b ? -1 : a > b ? 1 : 0;
     });
-  }, [cotisationsFiltrees]);
+  }, [allCotisations]);
+
+  // Les lignes reellement affichees, groupees par mois, dans le meme ordre.
+  const cotisationsAfficheesParMois = useMemo(() => {
+    const map = {};
+    cotisationsAffichees.forEach((c) => {
+      const key = c.mois_cotisation || c.date_paiement?.slice(0, 7) || 'Non daté';
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    });
+    return Object.entries(map).sort(([a], [b]) => {
+      if (a === 'Non daté') return 1;
+      if (b === 'Non daté') return -1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  }, [cotisationsAffichees]);
 
   const resetForm = () => { setMembreSelectionne(null); setQuery(''); setSansCarte([]); setMontant(''); setModePaiement('especes'); setMoisCotisation(getCurrentMonth()); setNote(''); setFeedback(null); };
 
