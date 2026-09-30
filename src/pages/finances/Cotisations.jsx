@@ -151,16 +151,6 @@ export default function Cotisations() {
   const filtreActif = filtreMois !== '' || filtreObjectif !== 'tous' || filtreTexte.trim() !== '';
   // Mois en cours vide : le defaut ne doit pas laisser croire a une perte de
   // donnees. On propose de revenir a la vue complete.
-  const kpiLibelle = useMemo(() => {
-    const parts = [];
-    if (filtreMois) parts.push(getMonthLabel(filtreMois));
-    if (filtreObjectif === 'atteint') parts.push('objectif atteint');
-    if (filtreObjectif === 'restant') parts.push('objectif restant');
-    if (filtreTexte.trim()) parts.push(`« ${filtreTexte.trim()} »`);
-    if (parts.length === 0) return 'Campagne entière — tous les mois, tous les membres.';
-    return `Selon le filtre : ${parts.join(' · ')}.`;
-  }, [filtreMois, filtreObjectif, filtreTexte]);
-
   // La recherche texte reste dans la barre, elle est un usage different d'un
   // filtre : elle se tape en continu. Le compteur ne compte que les deux
   // vrais filtres.
@@ -592,11 +582,6 @@ export default function Cotisations() {
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Moyenne</p>
             <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(kpiMoyenne)}</p>
           </div>
-          {/* Les chiffres sont toujours ceux de la vue filtree. La mention rend
-              impossible de les confondre avec le total de la campagne. */}
-          <p className="col-span-3 text-[10px] text-gray-400">
-            {kpiLibelle}
-          </p>
         </div>
       )}
 
