@@ -77,6 +77,9 @@ export default function Cotisations() {
   const [showForm, setShowForm] = usePersistedState('cot-showForm', false);
   const [query, setQuery] = usePersistedState('cot-query', '');
   const [resultats, setResultats] = useState([]);
+  // Membres trouvés par la recherche mais dont la carte n'a pas été achetée :
+  // sans ce message, taper leur nom donne une liste vide sans explication.
+  const [sansCarte, setSansCarte] = useState([]);
   const [membreSelectionne, setMembreSelectionne] = usePersistedState('cot-membre', null);
   const [montant, setMontant] = usePersistedState('cot-montant', '');
   const [modePaiement, setModePaiement] = usePersistedState('cot-mode', 'especes');
@@ -142,15 +145,28 @@ export default function Cotisations() {
     });
   }, [allCotisations]);
 
-  const resetForm = () => { setMembreSelectionne(null); setQuery(''); setMontant(''); setModePaiement('especes'); setMoisCotisation(getCurrentMonth()); setNote(''); setFeedback(null); };
+  const resetForm = () => { setMembreSelectionne(null); setQuery(''); setSansCarte([]); setMontant(''); setModePaiement('especes'); setMoisCotisation(getCurrentMonth()); setNote(''); setFeedback(null); };
 
   const handleSearch = async (e) => {
     const value = e.target.value;
     setQuery(value);
     setMembreSelectionne(null);
-    if (value.trim().length < 2) { setResultats([]); return; }
+    if (value.trim().length < 2) { setResultats([]); setSansCarte([]); return; }
     setSearching(true);
-    try { const res = await membresService.searchInCampagne(ca.id, value); setResultats(res); } catch (err) { console.error(err); } finally { setSearching(false); }
+    try {
+      // Seuls les membres ayant acheté leur carte peuvent cotiser : c'est la
+      // règle appliquée par le trigger en base (trg_cotisation_exige_carte).
+      const res = await membresService.searchInCampagne(ca.id, value, 8, true);
+      setResultats(res);
+      if (res.length === 0) {
+        // Aucun officiel trouvé : on cherche sans filtre pour distinguer
+        // « personne de ce nom » de « trouvé, mais pas de carte ».
+        const tous = await membresService.searchInCampagne(ca.id, value, 8, false);
+        setSansCarte(tous.filter((m) => !m.carte_vendue));
+      } else {
+        setSansCarte([]);
+      }
+    } catch (err) { console.error(err); } finally { setSearching(false); }
   };
 
   const selectMembre = (m) => { setMembreSelectionne(m); setResultats([]); setQuery(`${m.prenom} ${m.nom} — ${m.numero_membre}`); };
@@ -484,6 +500,21 @@ export default function Cotisations() {
               </ul>
             )}
           </div>
+            {sansCarte.length > 0 && (
+              <div className="mt-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  {sansCarte.length} membre(s) sans carte achetée
+                </p>
+                {sansCarte.map((m) => (
+                  <p key={m.id} className="text-xs text-amber-700 dark:text-amber-400">
+                    {m.prenom} {m.nom} <span className="opacity-70">— {m.numero_membre}</span>
+                  </p>
+                ))}
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  Pas de cotisation possible : un membre doit avoir acheté sa carte.
+                </p>
+              </div>
+            )}
           {membreSelectionne && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

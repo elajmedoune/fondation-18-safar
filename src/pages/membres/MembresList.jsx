@@ -72,6 +72,9 @@ export default function MembresList() {
   const [filterResp, setFilterResp] = usePersistedState('mem-fresp', false);
   const [filterObjectif, setFilterObjectif] = usePersistedState('mem-fobj', false);
   const [filterMois, setFilterMois] = usePersistedState('mem-fmois', '');
+  // 'tous' | 'officiels' | 'non-officiels' : pilote la liste ET l'export PDF,
+  // ce qui donne les deux listes sans ecran supplementaire.
+  const [filtreCarte, setFiltreCarte] = usePersistedState('mem-fcarte', 'tous');
 
   const [mNom, setMNom] = usePersistedState('mem-nom', '');
   const [mPrenom, setMPrenom] = usePersistedState('mem-prenom', '');
@@ -79,6 +82,8 @@ export default function MembresList() {
   const [mSexe, setMSexe] = usePersistedState('mem-sexe', '');
   const [mGroupeId, setMGroupeId] = usePersistedState('mem-groupe', '');
   const [mFonction, setMFonction] = usePersistedState('mem-fonction', '');
+  // Membre officiel = a achete sa carte. Seul un membre officiel peut cotiser.
+  const [mCarte, setMCarte] = usePersistedState('mem-carte', false);
   const [mPhotoFile, setMPhotoFile] = useState(null);
   const [creating, setCreating] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -166,14 +171,21 @@ export default function MembresList() {
     if (filterObjectif) list = list.filter((f) => !f.objectifAtteint && f.objectif > 0);
     if (filterMois) list = list.filter((f) => !f.hasPaidThisMonth);
 
-    return list;
-  }, [enriched, q, filterBureau, filterResp, filterObjectif, filterMois]);
+    // carte_vendue est null pour les membres dont la colonne n'existe pas
+    // encore (migration pas encore appliquee) : ils ne doivent pas disparaitre
+    // de la liste complete.
+    if (filtreCarte === 'officiels') list = list.filter((f) => f.membre?.carte_vendue === true);
+    if (filtreCarte === 'non-officiels') list = list.filter((f) => f.membre?.carte_vendue !== true);
 
-  const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length;
+    return list;
+  }, [enriched, q, filterBureau, filterResp, filterObjectif, filterMois, filtreCarte]);
+
+  const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length
+    + (filtreCarte !== 'tous' ? 1 : 0);
 
   const resetForm = () => {
     setMNom(''); setMPrenom(''); setMTelephone(''); setMSexe('');
-    setMGroupeId(''); setMFonction(''); setMPhotoFile(null);
+    setMGroupeId(''); setMFonction(''); setMPhotoFile(null); setMCarte(false);
     setFeedback(null);
   };
 
@@ -189,12 +201,12 @@ export default function MembresList() {
       let photo_url = null;
       if (mPhotoFile) photo_url = await membresService.uploadPhoto(mPhotoFile);
       await membresService.createWithGroupe(
-        { nom: mNom, prenom: mPrenom, telephone: mTelephone, sexe: mSexe || null, photo_url, fonction: mFonction || null },
+        { nom: mNom, prenom: mPrenom, telephone: mTelephone, sexe: mSexe || null, photo_url, fonction: mFonction || null, carte_vendue: mCarte },
         campagneActive.id,
         mGroupeId || null,
         user.id
       );
-      setFeedback({ type: 'success', message: `Membre ${mPrenom} ${mNom} créé.` });
+      setFeedback({ type: 'success', message: `Membre ${mPrenom} ${mNom} créé${mCarte ? ' — membre officiel' : ' — sans carte achetée'}.` });
       resetForm();
       invalidateAll(queryClient);
     } catch (err) {
@@ -335,6 +347,20 @@ export default function MembresList() {
               />
             </div>
           </div>
+          <label className="flex items-start gap-3 rounded-xl border border-primary-200 dark:border-primary-900 bg-primary-50/60 dark:bg-primary-950/30 px-3 py-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={mCarte}
+              onChange={(e) => setMCarte(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-700 focus:ring-primary-500"
+            />
+            <span className="text-sm">
+              <span className="font-semibold text-gray-900 dark:text-white">A déjà acheté sa carte</span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400">
+                Seuls les membres officiels peuvent cotiser et figurer sur la liste des membres officiels.
+              </span>
+            </span>
+          </label>
           <div className="flex flex-col sm:flex-row gap-2">
             <button type="submit" disabled={creating} className="flex-1 rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
               {creating ? 'Création...' : 'Créer le membre'}
@@ -386,6 +412,29 @@ export default function MembresList() {
               )}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="col-span-2 sm:col-span-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-500">Carte :</span>
+                {[
+                  ['tous', 'Tous'],
+                  ['officiels', 'Membres officiels'],
+                  ['non-officiels', 'Sans carte achetée'],
+                ].map(([valeur, libelle]) => (
+                  <button
+                    key={valeur}
+                    onClick={() => setFiltreCarte(valeur)}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-medium border transition-all ${
+                      filtreCarte === valeur
+                        ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                        : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    {libelle}
+                  </button>
+                ))}
+                {filtreCarte !== 'tous' && (
+                  <span className="text-xs text-gray-400">l'export PDF respecte ce filtre</span>
+                )}
+              </div>
               <button
                 onClick={() => setFilterBureau(!filterBureau)}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all ${

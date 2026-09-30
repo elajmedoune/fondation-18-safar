@@ -248,17 +248,23 @@ export const membresService = {
   // (utilisée par les collecteurs cotisations / quêtes).
   // NB : "!inner" est indispensable pour que le filtre sur campagne_membres
   // exclue réellement les membres sans fiche dans cette campagne.
-  async searchInCampagne(campagneId, query, limit = 8) {
+  // officielsSeulement : restreint aux membres ayant acheté leur carte, donc
+  // les seuls autorisés à cotiser. Utilisé par l'écran de cotisation. La
+  // colonne carte_vendue est renvoyée dans tous les cas, pour que l'appelant
+  // puisse expliquer une absence ("trouvé, mais pas de carte achetée").
+  async searchInCampagne(campagneId, query, limit = 8, officielsSeulement = false) {
     if (!campagneId || !query || query.trim().length < 2) return [];
     const q = sanitizeSearch(query);
     if (q.length < 2) return [];
-    const { data, error } = await supabase
+    let requete = supabase
       .from('membres')
-      .select('id, nom, prenom, numero_membre, telephone, photo_url, campagne_membres!inner(fonction, statut)')
+      .select('id, nom, prenom, numero_membre, telephone, photo_url, carte_vendue, campagne_membres!inner(fonction, statut)')
       .eq('campagne_membres.campagne_id', campagneId)
       .or(`numero_membre.ilike.%${q}%,nom.ilike.%${q}%,prenom.ilike.%${q}%,telephone.ilike.%${q}%`)
       .order('nom')
       .limit(limit);
+    if (officielsSeulement) requete = requete.eq('carte_vendue', true);
+    const { data, error } = await requete;
     if (error) throw error;
     return data;
   },
@@ -280,7 +286,7 @@ export const membresService = {
     return data || [];
   },
 
-  async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction }, campagneId, groupeId, userId) {
+  async createWithGroupe({ nom, prenom, telephone, sexe, photo_url, fonction, carte_vendue }, campagneId, groupeId, userId) {
     // Un membre est TOUJOURS créé DANS une campagne : pas de campagne = refus.
     if (!campagneId) throw new Error("Impossible de créer un membre hors campagne. Sélectionnez d'abord une campagne active.");
     // NB : "fonction" est portée par campagne_membres (par campagne), pas par membres.
@@ -295,7 +301,10 @@ export const membresService = {
         p_sexe: sexe || null,
         p_photo_url: photo_url || null,
         p_groupe_id: groupeId || null,
-        p_fonction: fonction || null
+        p_fonction: fonction || null,
+        // Membre officiel = a achete sa carte. Seul un membre officiel peut
+        // cotiser (garde-fou trg_cotisation_exige_carte).
+        p_carte_vendue: carte_vendue === true
       })
       .single();
     if (error) throw error;
