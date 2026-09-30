@@ -159,7 +159,6 @@ export default function Cotisations() {
     return `Selon le filtre : ${parts.join(' · ')}.`;
   }, [filtreMois, filtreObjectif, filtreTexte]);
 
-  const moisCourantVide = filtreMois === getCurrentMonth() && cotisationsFiltrees.length === 0 && allCotisations.length > 0;
   // La recherche texte reste dans la barre, elle est un usage different d'un
   // filtre : elle se tape en continu. Le compteur ne compte que les deux
   // vrais filtres.
@@ -218,6 +217,10 @@ export default function Cotisations() {
     [cotisationsFiltrees]
   );
   const kpiMoyenne = kpiCotisants > 0 ? kpiTotal / kpiCotisants : 0;
+
+  // Declare apres les KPI : elle lit cotisationsFiltrees, qui n'existe pas
+  // encore plus haut dans le composant (erreur "before initialization").
+  const moisCourantVide = filtreMois === getCurrentMonth() && cotisationsFiltrees.length === 0 && allCotisations.length > 0;
 
   const totalFiltre = useMemo(
     () => cotisationsFiltrees.reduce((s, r) => s + Number(r.montant || 0), 0),
