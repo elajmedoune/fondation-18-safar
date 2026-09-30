@@ -212,12 +212,24 @@ export default function ScanQR() {
       }
     } catch (err) {
       console.error(err);
-      setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement de la cotisation." });
+      // Le declencheur en base renvoie le refus de la base : on le montre tel
+      // quel plutot qu'un message generique qui ferait croire a une panne.
+      const refuse = /carte non achetee|membre non officiel/i.test(err?.message || '');
+      setFeedback({
+        type: 'error',
+        message: refuse
+          ? "Cotisation refusée : ce membre n'a pas acheté sa carte."
+          : (err?.message || "Erreur lors de l'enregistrement de la cotisation.")
+      });
     } finally {
       setSaving(false);
     }
   };
 
+  // Membre non officiel = carte non achetee. La base refuse la cotisation,
+  // autant le dire au scan plutot que de laisser saisir un montant qui partira
+  // en erreur 400 a l'enregistrement.
+  const membreOfficiel = membre?.carte_vendue !== false;
   const fiche = membre?.campagne_membres?.[0];
   const totalCotisations = cotisationsHistory.reduce((s, c) => s + Number(c.montant), 0);
 
@@ -349,10 +361,21 @@ export default function ScanQR() {
           {/* Cotisation form (tresorier/president/admin) */}
           {peutEncaisser && (
             <form onSubmit={handleCotisation} className="p-5 space-y-3">
+              {!membreOfficiel && (
+                <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 mb-1">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    Carte non achetée — cotisation impossible
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                    Ce membre n'est pas officiel. Si la carte vient d'être vendue,
+                    cochez-la dans la liste Membres avant d'enregistrer le paiement.
+                  </p>
+                </div>
+              )}
               <p className="text-sm font-semibold text-gray-900 dark:text-white">Enregistrer une cotisation</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
-                  type="number" min="1" step="1" placeholder="Montant (FCFA)"
+                  type="number" min="1" step="1" disabled={!membreOfficiel} placeholder="Montant (FCFA)"
                   value={montant} onChange={(e) => setMontant(e.target.value)} required
                   className={inputCls}
                 />
@@ -362,8 +385,8 @@ export default function ScanQR() {
               </div>
               <input type="month" value={moisCotisation} onChange={(e) => setMoisCotisation(e.target.value)} className={inputCls} title="Mois couvert par cette cotisation" />
               <input placeholder="Note (optionnel)" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} />
-              <button type="submit" disabled={saving} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
-                {saving ? 'Enregistrement...' : 'Enregistrer la cotisation'}
+              <button type="submit" disabled={saving || !membreOfficiel} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
+                {saving ? 'Enregistrement...' : membreOfficiel ? 'Enregistrer la cotisation' : 'Cotisation bloquée'}
               </button>
               {feedback && (
                 <div className={`flex items-center gap-2 text-sm ${feedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
