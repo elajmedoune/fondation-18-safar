@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Pencil, Search, Plus, X, Filter, Users, Shield, Target, CalendarX, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Pencil, Search, Plus, X, Filter, Users, Shield, Target, CalendarX, CheckCircle2, AlertCircle, CreditCard } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 
@@ -86,7 +86,6 @@ export default function MembresList() {
   // cotiser. Les membres sans carte restent accessibles via le filtre, sinon
   // ils deviendraient invisibles et on croirait les avoir perdus.
   const [filtreCarte, setFiltreCarte] = usePersistedState('mem-carte-officiel', CARTE_DEFAUT);
-  const [carteBusy, setCarteBusy] = useState(null);
 
   const [mNom, setMNom] = usePersistedState('mem-nom', '');
   const [mPrenom, setMPrenom] = usePersistedState('mem-prenom', '');
@@ -216,23 +215,6 @@ export default function MembresList() {
 
   const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length
     + (filtreCarte !== CARTE_DEFAUT ? 1 : 0);
-
-  // Bascule rapide depuis la liste : un tresorier qui enregistre un paiement
-  // au guichet coche la carte en meme temps, sans ouvrir la fiche.
-  const basculerCarte = async (membreId, valeurActuelle) => {
-    setCarteBusy(membreId);
-    try {
-      await membresService.update(membreId, { carte_vendue: !valeurActuelle }, { userId: user?.id, campagneId: campagneActive?.id });
-      queryClient.invalidateQueries({ queryKey: ['membres-liste', campagneActive?.id] });
-      invalidateAll(queryClient);
-      setFeedback({ type: 'success', message: valeurActuelle ? 'Carte enregistrée : le membre peut cotiser.' : 'Carte retirée : le membre ne peut plus cotiser.' });
-    } catch (err) {
-      console.error(err);
-      setFeedback({ type: 'error', message: err.message || 'Erreur.' });
-    } finally {
-      setCarteBusy(null);
-    }
-  };
 
   const resetForm = () => {
     setMNom(''); setMPrenom(''); setMTelephone(''); setMSexe('');
@@ -598,21 +580,24 @@ export default function MembresList() {
                       </span>
                       {/* Achat de la carte : c'est ce qui distingue un membre
                           officiel (autorise a cotiser) des autres. */}
-                      <button
-                        type="button"
-                        disabled={carteBusy === f.membre?.id}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); basculerCarte(f.membre.id, f.membre.carte_vendue === true); }}
+                      {/* Purement informatif : AUCUN clic ici.
+                          La carte se modifie dans la fiche du membre, parce
+                          qu'un clic par erreur sur cette liste pendant un
+                          releve de paiements decocherait un membre sans
+                          qu'on le remarque. */}
+                      <span
                         title={f.membre?.carte_vendue === true
-                          ? 'A acheté sa carte : peut cotiser. Cliquer pour retirer la carte.'
-                          : "N'a pas acheté sa carte : ne peut pas cotiser. Cliquer pour enregistrer l'achat."}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                          ? 'Carte achetee : membre officiel, il peut cotiser. Modifier dans sa fiche.'
+                          : "Carte non achetee : ce membre ne peut pas cotiser. Modifier dans sa fiche."}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                           f.membre?.carte_vendue === true
-                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400'
+                            ? 'border-emerald-300/70 bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-800 dark:border-emerald-700 dark:from-emerald-900/40 dark:to-emerald-800/30 dark:text-emerald-300'
+                            : 'border-amber-300/70 border-dashed bg-amber-50/60 text-amber-800 dark:border-amber-700/80 dark:bg-amber-950/30 dark:text-amber-400'
                         }`}
                       >
-                        {f.membre?.carte_vendue === true ? 'Carte achetée' : 'Sans carte'}
-                      </button>
+                        <CreditCard className="h-3 w-3 shrink-0" strokeWidth={2.5} />
+                        {f.membre?.carte_vendue === true ? 'Officiel' : 'Non officiel'}
+                      </span>
                       {f.fonctionAffichee && (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${BUREAU_BADGES[f._roleBureau] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                           {f.fonctionAffichee}
