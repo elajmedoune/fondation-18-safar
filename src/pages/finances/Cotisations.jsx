@@ -92,7 +92,12 @@ export default function Cotisations() {
   const [note, setNote] = usePersistedState('cot-note', '');
   // Filtres de la liste. Discrets mais suffisants : un tresorier cherche
   // toujours "le mois de X" ou "qui doit encore payer".
-  const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois', '');
+  // Defaut : le mois en cours. C'est la question que le tresorier se pose en
+  // premier ("qu'ai-je encaisse ce mois-ci ?"). Un defaut "tous les mois" oblige
+  // a aller chercher le mois dans le filtre a chaque consultation.
+  // La cle change : l'ancienne contenait deja "" (l'ancien defaut), memorise dans
+  // le navigateur, qui primerait sur le nouveau defaut.
+  const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois-defaut', getCurrentMonth());
   const [filtreObjectif, setFiltreObjectif] = usePersistedState('cot-fobj', 'tous');
   const [filtreTexte, setFiltreTexte] = usePersistedState('cot-ftexte', '');
   const [showFilters, setShowFilters] = usePersistedState('cot-showFilters', false);
@@ -142,10 +147,17 @@ export default function Cotisations() {
   }, [allCotisations]);
 
   const filtreActif = filtreMois !== '' || filtreObjectif !== 'tous' || filtreTexte.trim() !== '';
+  // Mois en cours vide : le defaut ne doit pas laisser croire a une perte de
+  // donnees. On propose de revenir a la vue complete.
+  const moisCourantVide = filtreMois === getCurrentMonth() && cotisationsFiltrees.length === 0 && allCotisations.length > 0;
   // La recherche texte reste dans la barre, elle est un usage different d'un
   // filtre : elle se tape en continu. Le compteur ne compte que les deux
   // vrais filtres.
-  const activeFilterCount = (filtreMois ? 1 : 0) + (filtreObjectif !== 'tous' ? 1 : 0);
+  // Le mois courant est la vue par defaut, pas un filtre : le compter ferait
+  // afficher "1 filtre actif" en permanence. Il est compte des que la vue
+  // quitte le mois en cours.
+  const moisEstDefaut = filtreMois === '' || filtreMois === getCurrentMonth();
+  const activeFilterCount = (moisEstDefaut ? 0 : 1) + (filtreObjectif !== 'tous' ? 1 : 0);
 
   // Fonction partagee : l'ecran affiche `cotisations` (50 derniers paiements)
   // et les exports utilisent `allCotisations`. Sans le meme filtre sur les
@@ -678,7 +690,7 @@ export default function Cotisations() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Filtres avancés</span>
             {activeFilterCount > 0 && (
-              <button onClick={() => { setFiltreMois(''); setFiltreObjectif('tous'); }} className="text-xs text-primary-600 hover:underline">
+              <button onClick={() => { setFiltreMois(getCurrentMonth()); setFiltreObjectif('tous'); }} className="text-xs text-primary-600 hover:underline">
                 Tout effacer
               </button>
             )}
@@ -729,8 +741,20 @@ export default function Cotisations() {
         <div className="text-center py-12 text-gray-400">
           <Wallet className="h-10 w-10 mx-auto mb-3 opacity-40" />
           <p className="text-sm">
-            {filtreActif ? 'Aucune cotisation ne correspond aux filtres.' : 'Aucune cotisation enregistrée.'}
+            {moisCourantVide
+              ? `Aucune cotisation enregistrée en ${getMonthLabel(getCurrentMonth())}.`
+              : filtreActif
+                ? 'Aucune cotisation ne correspond aux filtres.'
+                : 'Aucune cotisation enregistrée.'}
           </p>
+          {moisCourantVide && (
+            <button
+              onClick={() => setFiltreMois('')}
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5 text-xs text-primary-700 dark:text-primary-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              Voir les autres mois ({allCotisations.length} cotisations)
+            </button>
+          )}
           {filtreActif && (
             <p className="text-xs mt-1.5">
               Filtres :{' '}
