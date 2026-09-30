@@ -212,6 +212,17 @@ export default function Cotisations() {
 
   // Declare apres les KPI : elle lit cotisationsFiltrees, qui n'existe pas
   // encore plus haut dans le composant (erreur "before initialization").
+  // Repartition des membres de la campagne par achat de carte. Sert de 4e KPI :
+  // une liste de cotisations qui s'arrete a N membres begs la question "et les
+  // autres ?". null quand la colonne n'existe pas encore en base.
+  const { data: repartitionCartes } = useQuery({
+    queryKey: ['cotisations-cartes', ca?.id],
+    queryFn: () => membresService.countMembresParCarte(ca.id),
+    enabled: !!ca,
+  });
+  const cartesExistentes = repartitionCartes?.classable === true;
+  const nbSansCarte = cartesExistentes ? repartitionCartes.nonOfficiels : null;
+
   // Contexte affiche dans le sous-titre : le mois vu, ou la campagne entiere.
   // Sans lui, on ne sait pas si le total annonce porte sur un mois ou sur tout.
   const contexteVue = useMemo(() => {
@@ -599,7 +610,7 @@ export default function Cotisations() {
 
       {/* Stats */}
       {cotisationsFiltrees.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className={`grid gap-3 ${cartesExistentes ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
             <p className="text-lg font-bold text-green-600 mt-1">{formatFCFA(kpiTotal)}</p>
@@ -612,6 +623,19 @@ export default function Cotisations() {
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Moyenne</p>
             <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(kpiMoyenne)}</p>
           </div>
+          {cartesExistentes && (
+            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Avec carte</p>
+              <p className="text-lg font-bold text-emerald-600 mt-1">
+                {repartitionCartes.officiels}/{repartitionCartes.total}
+              </p>
+              {nbSansCarte > 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                  {nbSansCarte} sans carte · ne peuvent pas cotiser
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
