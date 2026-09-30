@@ -67,6 +67,7 @@ export default function MembreProfil() {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
+  const [carteVendue, setCarteVendue] = useState(false);
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [telephone, setTelephone] = useState('');
@@ -144,6 +145,7 @@ export default function MembreProfil() {
     setSexe(fiche.sexe || '');
     setGroupeId(cm?.groupe?.id || '');
     setFonction(cm?.fonction || '');
+    setCarteVendue(fiche.carte_vendue === true);
   }, [fiche]);
 
   const startEdit = () => {
@@ -155,6 +157,7 @@ export default function MembreProfil() {
     setSexe(fiche.sexe || '');
     setGroupeId(cm?.groupe?.id || '');
     setFonction(cm?.fonction || '');
+    setCarteVendue(fiche.carte_vendue === true);
     setPhotoUrl('');
     setPhotoPreview('');
     setEditing(true);
@@ -207,7 +210,7 @@ export default function MembreProfil() {
       // photo_url n'est envoyé que si une nouvelle photo a été importée : sinon
       // on réécrirait la valeur existante et la purge de l'ancien fichier
       // (faite dans update()) porterait sur le fichier courant.
-      const patch = { nom, prenom, telephone: telephone || null, sexe: sexe || null };
+      const patch = { nom, prenom, telephone: telephone || null, sexe: sexe || null, carte_vendue: carteVendue };
       if (photoUrl) patch.photo_url = photoUrl;
       await membresService.update(id, patch, { userId: user.id, campagneId: campagneActive.id });
       const campagneMembreId = fiche?.campagne_membres?.[0]?.id;
@@ -398,6 +401,21 @@ export default function MembreProfil() {
               {groupes.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
             </select>
             <input placeholder="Fonction (ex: Chef d'équipe, Chauffeur...)" value={fonction} onChange={(e) => setFonction(e.target.value)} className={inputCls} />
+            {/* Seul un membre ayant achete sa carte peut cotiser. */}
+            <label className="sm:col-span-2 flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={carteVendue}
+                onChange={(e) => setCarteVendue(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary-700 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                A déjà acheté sa carte
+                <span className="block text-xs text-gray-500 dark:text-gray-400">
+                  Décocher cette case empêche le membre de cotiser.
+                </span>
+              </span>
+            </label>
           </div>
           <button type="submit" disabled={saving} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
             {saving ? 'Enregistrement...' : 'Enregistrer'}

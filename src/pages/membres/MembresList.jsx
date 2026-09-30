@@ -75,6 +75,7 @@ export default function MembresList() {
   // 'tous' | 'officiels' | 'non-officiels' : pilote la liste ET l'export PDF,
   // ce qui donne les deux listes sans ecran supplementaire.
   const [filtreCarte, setFiltreCarte] = usePersistedState('mem-fcarte', 'tous');
+  const [carteBusy, setCarteBusy] = useState(null);
 
   const [mNom, setMNom] = usePersistedState('mem-nom', '');
   const [mPrenom, setMPrenom] = usePersistedState('mem-prenom', '');
@@ -182,6 +183,23 @@ export default function MembresList() {
 
   const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length
     + (filtreCarte !== 'tous' ? 1 : 0);
+
+  // Bascule rapide depuis la liste : un tresorier qui enregistre un paiement
+  // au guichet coche la carte en meme temps, sans ouvrir la fiche.
+  const basculerCarte = async (membreId, valeurActuelle) => {
+    setCarteBusy(membreId);
+    try {
+      await membresService.update(membreId, { carte_vendue: !valeurActuelle }, { userId: user?.id, campagneId: campagneActive?.id });
+      queryClient.invalidateQueries({ queryKey: ['membres-liste', campagneActive?.id] });
+      invalidateAll(queryClient);
+      setFeedback({ type: 'success', message: valeururActuelle ? 'Carte enregistrée : le membre peut cotiser.' : 'Carte retirée : le membre ne peut plus cotiser.' });
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'error', message: err.message || 'Erreur.' });
+    } finally {
+      setCarteBusy(null);
+    }
+  };
 
   const resetForm = () => {
     setMNom(''); setMPrenom(''); setMTelephone(''); setMSexe('');
@@ -509,15 +527,21 @@ export default function MembresList() {
                       </span>
                       {/* Achat de la carte : c'est ce qui distingue un membre
                           officiel (autorise a cotiser) des autres. */}
-                      {f.membre?.carte_vendue === true ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          Carte achetée
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                          Sans carte
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        disabled={carteBusy === f.membre?.id}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); basculerCarte(f.membre.id, f.membre.carte_vendue === true); }}
+                        title={f.membre?.carte_vendue === true
+                          ? 'A acheté sa carte : peut cotiser. Cliquer pour retirer la carte.'
+                          : "N'a pas acheté sa carte : ne peut pas cotiser. Cliquer pour enregistrer l'achat."}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                          f.membre?.carte_vendue === true
+                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}
+                      >
+                        {f.membre?.carte_vendue === true ? 'Carte achetée' : 'Sans carte'}
+                      </button>
                       {f.fonctionAffichee && (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${BUREAU_BADGES[f._roleBureau] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                           {f.fonctionAffichee}
