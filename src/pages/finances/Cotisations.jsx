@@ -639,12 +639,21 @@ export default function Cotisations() {
               value={filtreTexte}
               onChange={(e) => setFiltreTexte(e.target.value)}
               placeholder="Rechercher un membre, un lieu, une note..."
-              className={`w-full pl-10 pr-3 rounded-xl border bg-white/70 dark:bg-gray-900/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all ${
+              className={`w-full pl-10 pr-9 rounded-xl border bg-white/70 dark:bg-gray-900/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all ${
                 filtreTexte
                   ? 'border-primary-300 dark:border-primary-700 focus:ring-primary-500/40'
                   : 'border-gray-200 dark:border-gray-800 focus:border-primary-400'
               }`}
             />
+            {filtreTexte && (
+              <button
+                onClick={() => setFiltreTexte('')}
+                title="Effacer la recherche"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -668,7 +677,7 @@ export default function Cotisations() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Filtres avancés</span>
             {activeFilterCount > 0 && (
-              <button onClick={() => { setFilterMois(''); setFiltreObjectif('tous'); setFiltreTexte(''); }} className="text-xs text-primary-600 hover:underline">
+              <button onClick={() => { setFiltreMois(''); setFiltreObjectif('tous'); }} className="text-xs text-primary-600 hover:underline">
                 Tout effacer
               </button>
             )}
