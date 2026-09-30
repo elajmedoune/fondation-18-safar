@@ -118,14 +118,18 @@ export default function MembresList() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('cotisations')
-        .select('membre_id, montant, mois_cotisation')
+        .select('membre_id, montant, mois_cotisation, date_paiement')
         .eq('campagne_id', campagneActive.id);
       if (error) throw error;
       const map = {};
       (data || []).forEach((c) => {
         if (!map[c.membre_id]) map[c.membre_id] = { total: 0, months: new Set() };
         map[c.membre_id].total += Number(c.montant);
-        if (c.mois_cotisation) map[c.membre_id].months.add(c.mois_cotisation);
+        // Repli sur la date de paiement : une cotisation saisie sans mois
+        // explicite compte dans le total, elle devait aussi compter dans le
+        // filtre du mois, sinon le membre paraissait toujours impaye.
+        const mois = c.mois_cotisation || c.date_paiement?.slice(0, 7);
+        if (mois) map[c.membre_id].months.add(mois);
       });
       // Convert sets to arrays for serialisation
       Object.values(map).forEach((v) => { v.months = [...v.months]; });
@@ -176,7 +180,10 @@ export default function MembresList() {
 
     if (filterBureau) list = list.filter((f) => f.isBureau);
     if (filterResp) list = list.filter((f) => f.isResp);
-    if (filterObjectif) list = list.filter((f) => !f.objectifAtteint && f.objectif > 0);
+    // Un membre sans objectif defini (colonnes a 0 par defaut) n'est pas
+    // "objectif atteint", il n'a pas d'objectif : le cacher rendait le filtre
+    // vide sans explication.
+    if (filterObjectif) list = list.filter((f) => f.objectif <= 0 || !f.objectifAtteint);
     if (filterMois) list = list.filter((f) => !f.hasPaidThisMonth);
 
     // carte_vendue est null pour les membres dont la colonne n'existe pas
@@ -461,7 +468,6 @@ export default function MembresList() {
                     {libelle}
                   </button>
                 ))}
-                <span className="text-xs text-gray-400">l'export PDF suit ce filtre</span>
               </div>
               <button
                 onClick={() => setFilterBureau(!filterBureau)}
@@ -513,6 +519,20 @@ export default function MembresList() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <p className="text-sm">Aucun membre trouvé.</p>
+          {/* Sans ce detail, un filtre trop restrictif est indistinguable d'un
+              membre absent : impossible de savoir si le filtre a fonctionne. */}
+          {activeFilterCount > 0 && (
+            <p className="text-xs mt-1.5">
+              Filtres actifs :{' '}
+              {[
+                filtreCarte !== CARTE_DEFAUT && (filtreCarte === 'officiels' ? 'carte achetée' : 'sans carte'),
+                filterBureau && 'bureau',
+                filterResp && 'responsables',
+                filterObjectif && 'objectif non atteint',
+                filterMois && `pas de cotisation en ${filterMois}`,
+              ].filter(Boolean).join(', ')}
+            </p>
+          )}
         </div>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/50 rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm overflow-hidden">
