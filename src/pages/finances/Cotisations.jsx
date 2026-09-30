@@ -639,7 +639,7 @@ export default function Cotisations() {
               value={filtreTexte}
               onChange={(e) => setFiltreTexte(e.target.value)}
               placeholder="Rechercher un membre, un lieu, une note..."
-              className={`w-full pl-10 pr-9 rounded-xl border bg-white/70 dark:bg-gray-900/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all ${
+              className={`w-full pl-10 pr-9 rounded-xl border bg-white/70 dark:bg-gray-900/50 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all ${
                 filtreTexte
                   ? 'border-primary-300 dark:border-primary-700 focus:ring-primary-500/40'
                   : 'border-gray-200 dark:border-gray-800 focus:border-primary-400'
@@ -688,8 +688,8 @@ export default function Cotisations() {
               <select
                 value={filtreMois}
                 onChange={(e) => setFiltreMois(e.target.value)}
-                className={`mt-1 w-full rounded-xl border px-3 py-2 text-xs focus:outline-none transition-all ${
-                  filtreMois ? 'border-primary-300 dark:border-primary-700' : 'border-gray-200 dark:border-gray-700'
+                className={`mt-1 text-xs py-2 ${selectCls} ${
+                  filtreMois ? 'border-primary-300 dark:border-primary-700' : ''
                 }`}
               >
                 <option value="">Tous les mois</option>
@@ -703,8 +703,8 @@ export default function Cotisations() {
               <select
                 value={filtreObjectif}
                 onChange={(e) => setFiltreObjectif(e.target.value)}
-                className={`mt-1 w-full rounded-xl border px-3 py-2 text-xs focus:outline-none transition-all ${
-                  filtreObjectif !== 'tous' ? 'border-primary-300 dark:border-primary-700' : 'border-gray-200 dark:border-gray-700'
+                className={`mt-1 text-xs py-2 ${selectCls} ${
+                  filtreObjectif !== 'tous' ? 'border-primary-300 dark:border-primary-700' : ''
                 }`}
               >
                 <option value="tous">Tous</option>
