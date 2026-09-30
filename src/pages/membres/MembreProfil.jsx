@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Wallet, Calendar, Pencil, X, Camera, Loader2 } from 'lucide-react';
+import { FileDown, Wallet, Calendar, Pencil, X, Camera, Loader2, CreditCard, AlertCircle } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { membresService } from '../../services/membres.service.js';
@@ -330,6 +330,21 @@ export default function MembreProfil() {
                   N° {fiche.numero_membre}
                   {cm?.groupe?.nom ? ` · ${cm.groupe.nom}` : ''}
                 </p>
+                {/* Meme marqueur que dans la liste : pastille pleine verte pour
+                    un officiel, bordure pointillee ambre sinon. */}
+                <span
+                  title={fiche.carte_vendue
+                    ? 'Carte achetee : membre officiel, il peut cotiser'
+                    : "Carte non achetee : ce membre ne peut pas cotiser. Utiliser le crayon pour enregistrer l'achat."}
+                  className={`inline-flex items-center gap-1 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                    fiche.carte_vendue
+                      ? 'border-emerald-300/70 bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-800 dark:border-emerald-700 dark:from-emerald-900/40 dark:to-emerald-800/30 dark:text-emerald-300'
+                      : 'border-dashed border-amber-300/70 bg-amber-50/60 text-amber-800 dark:border-amber-700/80 dark:bg-amber-950/30 dark:text-amber-400'
+                  }`}
+                >
+                  <CreditCard className="h-3 w-3 shrink-0" strokeWidth={2.5} />
+                  {fiche.carte_vendue ? 'Officiel' : 'Non officiel'}
+                </span>
                 {roleBureau && (
                   <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold tracking-wide shrink-0">
                     {roleBureau}
@@ -342,6 +357,15 @@ export default function MembreProfil() {
                 )}
               </div>
               {fiche.sexe && <p className="text-xs text-gray-400 mt-0.5 truncate">{fiche.sexe === 'masculin' ? 'Masculin' : 'Féminin'}{fiche.telephone ? ` · ${fiche.telephone}` : ''}</p>}
+              {!fiche.carte_vendue && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                  <span>
+                    Carte non achetée : ce membre ne peut pas cotiser.
+                    Si la carte vient d'être vendue, cliquez sur le crayon puis cochez « A déjà acheté sa carte ».
+                  </span>
+                </p>
+              )}
             </div>
           </div>
           <button
