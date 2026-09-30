@@ -485,7 +485,7 @@ export default function Dashboard() {
           {/* ===== SECRÉTAIRE ===== */}
           {rolePrincipal === 'secretaire' && (
             <>
-              <div className="grid grid-cols-2 gap-2 sm:gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
                 <StatCard icon={Users} label="Membres" value={nbMembres ?? '—'} accent="primary" />
                 {repartitionCartes?.classable && (
                   <Link
