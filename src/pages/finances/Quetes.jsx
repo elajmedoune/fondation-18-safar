@@ -53,6 +53,8 @@ export default function Quetes() {
   const [query, setQuery] = usePersistedState('qt-query', '');
   const [resultats, setResultats] = useState([]);
   const [collecteurMembre, setCollecteurMembre] = usePersistedState('qt-collecteur', null);
+  // Membres trouves mais sans carte : ils ne peuvent pas faire de quete.
+  const [sansCarte, setSansCarte] = useState([]);
   const [zone, setZone] = usePersistedState('qt-zone', '');
   const [lieu, setLieu] = usePersistedState('qt-lieu', '');
   const [montant, setMontant] = usePersistedState('qt-montant', '');
@@ -78,18 +80,30 @@ export default function Quetes() {
     enabled: !!campagneActive
   });
 
-  const resetForm = () => { setCollecteurMembre(null); setQuery(''); setZone(''); setLieu(''); setMontant(''); setNote(''); setFeedback(null); };
+  const resetForm = () => { setCollecteurMembre(null); setQuery(''); setZone(''); setLieu(''); setMontant(''); setNote(''); setSansCarte([]); setFeedback(null); };
 
   const handleSearch = async (e) => {
     const value = e.target.value;
     setQuery(value);
     setCollecteurMembre(null);
-    if (value.trim().length < 2) { setResultats([]); return; }
-    const res = await membresService.searchInCampagne(campagneActive.id, value);
-    setResultats(res);
+    if (value.trim().length < 2) { setResultats([]); setSansCarte([]); return; }
+    try {
+      // Seul un membre ayant achete sa carte peut faire une quete : c'est la
+      // regle appliquee par le trigger en base (trg_quete_exige_carte).
+      const res = await membresService.searchInCampagne(campagneActive.id, value, 8, true);
+      setResultats(res);
+      if (res.length === 0) {
+        // Aucun officiel trouve : on cherche sans filtre pour distinguer
+        // « personne de ce nom » de « trouve, mais sans carte ».
+        const tous = await membresService.searchInCampagne(campagneActive.id, value, 8, false);
+        setSansCarte(tous.filter((m) => !m.carte_vendue));
+      } else {
+        setSansCarte([]);
+      }
+    } catch (err) { console.error(err); }
   };
 
-  const selectMembre = (m) => { setCollecteurMembre(m); setResultats([]); setQuery(`${m.prenom} ${m.nom} — ${m.numero_membre}`); };
+  const selectMembre = (m) => { setCollecteurMembre(m); setResultats([]); setSansCarte([]); setQuery(`${m.prenom} ${m.nom} — ${m.numero_membre}`); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -104,7 +118,15 @@ export default function Quetes() {
       invalidateAll(queryClient);
     } catch (err) {
       console.error(err);
-      setFeedback({ type: 'error', message: "Erreur lors de l'enregistrement." });
+      // Le declencheur en base renvoie le refus de la base : on l'affiche tel
+      // quel plutot qu'un message qui ferait croire a une panne.
+      const refuse = /carte non achetee|membre non officiel/i.test(err?.message || '');
+      setFeedback({
+        type: 'error',
+        message: refuse
+          ? "Quete refusee : ce membre n'a pas achete sa carte."
+          : (err?.message || "Erreur lors de l'enregistrement.")
+      });
     } finally { setSubmitting(false); }
   };
 
@@ -231,6 +253,20 @@ export default function Quetes() {
                   <li key={m.id}><button type="button" onClick={() => selectMembre(m)} className="w-full text-left px-3 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm transition-colors">{m.prenom} {m.nom} <span className="text-gray-500">— {m.numero_membre}</span></button></li>
                 ))}
               </ul>
+            )}
+            {sansCarte.length > 0 && (
+              <div className="mt-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 space-y-1">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  {sansCarte.length} membre(s) sans carte achetée
+                </p>
+                <ul className="space-y-0.5">
+                  {sansCarte.map((m) => (
+                    <li key={m.id} className="text-xs text-amber-700 dark:text-amber-400">
+                      {m.prenom} {m.nom} <span className="opacity-70">— pas de quete possible</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
           {collecteurMembre && (
