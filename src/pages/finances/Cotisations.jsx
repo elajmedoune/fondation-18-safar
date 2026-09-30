@@ -5,6 +5,7 @@ import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
+import { bustCache } from '../../lib/bustCache.js';
 import { cotisationsService } from '../../services/cotisations.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
 import { preloadPhotos, drawCirclePhoto } from '../../lib/pdfPhoto.js';
@@ -750,9 +751,17 @@ export default function Cotisations() {
             return (
               <li key={c.id} className="flex items-center justify-between px-4 py-3.5 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/40 dark:to-primary-800/40 flex items-center justify-center text-primary-700 dark:text-primary-400 text-xs font-bold shrink-0">
-                    {c.membre?.prenom?.[0]}{c.membre?.nom?.[0]}
-                  </div>
+                  {c.membre?.photo_url ? (
+                    <img
+                      src={bustCache(c.membre.photo_url, 0)}
+                      alt=""
+                      className="h-9 w-9 rounded-full object-cover ring-1 ring-gray-100 dark:ring-gray-800 shrink-0"
+                    />
+                  ) : (
+                    <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/40 dark:to-primary-800/40 flex items-center justify-center text-primary-700 dark:text-primary-400 text-xs font-bold shrink-0">
+                      {c.membre?.prenom?.[0]}{c.membre?.nom?.[0]}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="font-semibold text-gray-900 dark:text-white truncate">{c.membre?.prenom} {c.membre?.nom}</p>
                     <p className="text-gray-500 text-xs truncate">
