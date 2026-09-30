@@ -212,6 +212,17 @@ export default function Cotisations() {
 
   // Declare apres les KPI : elle lit cotisationsFiltrees, qui n'existe pas
   // encore plus haut dans le composant (erreur "before initialization").
+  // Contexte affiche dans le sous-titre : le mois vu, ou la campagne entiere.
+  // Sans lui, on ne sait pas si le total annonce porte sur un mois ou sur tout.
+  const contexteVue = useMemo(() => {
+    const parts = [];
+    if (filtreMois) parts.push(getMonthLabel(filtreMois));
+    if (filtreObjectif === 'atteint') parts.push('objectif atteint');
+    if (filtreObjectif === 'restant') parts.push('objectif restant');
+    if (filtreTexte.trim()) parts.push(`« ${filtreTexte.trim()} »`);
+    return parts.length ? parts.join(' · ') : 'toute la campagne';
+  }, [filtreMois, filtreObjectif, filtreTexte]);
+
   const moisCourantVide = filtreMois === getCurrentMonth() && cotisationsFiltrees.length === 0 && allCotisations.length > 0;
 
   const totalFiltre = useMemo(
@@ -528,7 +539,7 @@ export default function Cotisations() {
     <div className="space-y-5">
       <PageHeader
         title="Cotisations"
-        subtitle={`${cotisationsFiltrees.length} cotisation${cotisationsFiltrees.length !== 1 ? 's' : ''} · Total ${formatFCFA(kpiTotal)}`}
+        subtitle={`${contexteVue} · ${cotisationsFiltrees.length} cotisation${cotisationsFiltrees.length !== 1 ? 's' : ''} · Total ${formatFCFA(kpiTotal)}`}
         action={
           <div className={`grid gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <ExportMenu
