@@ -243,22 +243,17 @@ export default function Dashboard() {
           {rolePrincipal === 'administrateur' && (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                <StatCard icon={Users} label="Membres" value={nbMembres ?? '—'} accent="primary" />
-                {repartitionCartes?.classable && (
-                  <Link
-                    to="/membres"
-                    title={`${repartitionCartes.officiels} avec carte · ${repartitionCartes.nonOfficiels} sans carte`}
-                    className="block focus:outline-none focus:ring-2 focus:ring-primary-500/40 rounded-2xl"
-                  >
-                    <StatCard
-                      icon={CreditCard}
-                      label="Avec carte"
-                      value={`${repartitionCartes.officiels}/${repartitionCartes.total}`}
-                      accent="emerald"
-                      hint={repartitionCartes.nonOfficiels > 0 ? `${repartitionCartes.nonOfficiels} sans carte` : undefined}
-                    />
-                  </Link>
-                )}
+                <StatCard
+                  icon={Users}
+                  label="Membres"
+                  value={nbMembres ?? '—'}
+                  accent="primary"
+                  hint={
+                    repartitionCartes?.classable
+                      ? `${repartitionCartes.officiels} avec carte · ${repartitionCartes.nonOfficiels} sans carte`
+                      : undefined
+                  }
+                />
                 <StatCard icon={Wallet} label="Cotisations" value={formatFCFA(totalCotisations)} accent="emerald" />
                 <StatCard icon={HandHeart} label="Dons" value={formatFCFA(totalDons)} accent="sky" />
                 <StatCard icon={Coins} label="Quêtes" value={formatFCFA(totalQuetes)} accent="amber" />
