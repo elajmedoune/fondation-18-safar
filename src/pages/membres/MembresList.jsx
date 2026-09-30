@@ -76,6 +76,10 @@ export default function MembresList() {
   const [filterResp, setFilterResp] = usePersistedState('mem-fresp', false);
   const [filterObjectif, setFilterObjectif] = usePersistedState('mem-fobj', false);
   const [filterMois, setFilterMois] = usePersistedState('mem-fmois', '');
+  // Avant, le filtre du mois pouvait seulement signifier "n'a pas cotise",
+  // ce qui n'etait ecrit qu'en bas du panneau de filtres. Passer un mois
+  // demandait donc de deviner le sens. Deux sens explicites maintenant.
+  const [filterMoisMode, setFilterMoisMode] = usePersistedState('mem-fmois-mode', 'impayes');
   // 'tous' | 'officiels' | 'non-officiels' : pilote la liste ET l'export PDF,
   // ce qui donne les deux listes sans ecran supplementaire.
   // Defaut 'officiels' : la liste sert a travailler les membres qui peuvent
@@ -184,7 +188,11 @@ export default function MembresList() {
     // "objectif atteint", il n'a pas d'objectif : le cacher rendait le filtre
     // vide sans explication.
     if (filterObjectif) list = list.filter((f) => f.objectif <= 0 || !f.objectifAtteint);
-    if (filterMois) list = list.filter((f) => !f.hasPaidThisMonth);
+    if (filterMois) {
+      list = list.filter((f) =>
+        filterMoisMode === 'payes' ? f.hasPaidThisMonth : !f.hasPaidThisMonth
+      );
+    }
 
     // carte_vendue est null pour les membres dont la colonne n'existe pas
     // encore (migration pas encore appliquee) : ils ne doivent pas disparaitre
@@ -193,11 +201,19 @@ export default function MembresList() {
     if (filtreCarte === 'non-officiels') list = list.filter((f) => f.membre?.carte_vendue !== true);
 
     return list;
-  }, [enriched, q, filterBureau, filterResp, filterObjectif, filterMois, filtreCarte]);
+  }, [enriched, q, filterBureau, filterResp, filterObjectif, filterMois, filterMoisMode, filtreCarte]);
 
   // Le filtre carte n'est PAS compte quand il est sur sa valeur par defaut :
   // la vue par defaut n'est pas un filtre, sinon "Tout effacer" restait affiche
   // en permanence et le bouton remettait la carte sur "Tous" au lieu du defaut.
+  // Recompte avec le seul filtre du mois : affiche en direct si le filtre
+  // agit, et sur combien de membres. Sans ca, impossible de distinguer un
+  // filtre qui ne filtre pas d'un mois ou personne n'a cotise.
+  const nbPasCotiseCeMois = useMemo(() => {
+    if (!filterMois) return null;
+    return enriched.filter((f) => f.objectif <= 0 || !f.hasPaidThisMonth).length;
+  }, [enriched, filterMois]);
+
   const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length
     + (filtreCarte !== CARTE_DEFAUT ? 1 : 0);
 
@@ -469,6 +485,45 @@ export default function MembresList() {
                   </button>
                 ))}
               </div>
+              <div className="col-span-2 sm:col-span-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-500">Cotisation du mois :</span>
+                  {[
+                    ['impayes', "N'ont pas cotisé"],
+                    ['payes', 'Ont cotisé'],
+                  ].map(([valeur, libelle]) => (
+                    <button
+                      key={valeur}
+                      onClick={() => setFilterMoisMode(valeur)}
+                      disabled={!filterMois}
+                      title={!filterMois ? 'Choisissez un mois' : undefined}
+                      className={`rounded-xl px-3 py-1.5 text-xs font-medium border transition-all disabled:opacity-40 ${
+                        filterMoisMode === valeur && filterMois
+                          ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                          : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {libelle}
+                    </button>
+                  ))}
+                  <div className="relative flex-1 min-w-[140px]">
+                    <CalendarX className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="month"
+                      value={filterMois}
+                      onChange={(e) => { setFilterMois(e.target.value); if (e.target.value && filterMoisMode === 'tous') setFilterMoisMode('impayes'); }}
+                      className={`w-full appearance-none rounded-xl border pl-8 pr-2 py-1.5 text-xs font-medium transition-all ${
+                        filterMois ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                      }`}
+                    />
+                  </div>
+                  {nbPasCotiseCeMois !== null && (
+                    <span className="text-xs text-gray-500">
+                      {nbPasCotiseCeMois} sans cotisation sur {enriched.length}
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={() => setFilterBureau(!filterBureau)}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all ${
@@ -493,20 +548,8 @@ export default function MembresList() {
               >
                 <Target className="h-3.5 w-3.5" /> Objectif non atteint
               </button>
-              <div className="relative">
-                <CalendarX className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-                <input
-                  type="month"
-                  value={filterMois}
-                  onChange={(e) => setFilterMois(e.target.value)}
-                  className={`w-full appearance-none rounded-xl border pl-8 pr-2 py-2 text-xs font-medium transition-all ${
-                    filterMois ? 'border-red-300 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-300' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-                  }`}
-                  title="Pas cotisé ce mois"
-                />
-              </div>
             </div>
-            <p className="text-[10px] text-gray-400">Les filtres se combinent. Le filtre mois affiche les membres qui n'ont <strong>pas</strong> cotisé pour le mois sélectionné.</p>
+            <p className="text-[10px] text-gray-400">Les filtres se combinent (ET entre eux) et s'appliquent aussi a l'export.</p>
           </div>
         )}
       </div>
