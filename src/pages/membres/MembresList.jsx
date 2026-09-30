@@ -225,7 +225,7 @@ export default function MembresList() {
       await membresService.update(membreId, { carte_vendue: !valeurActuelle }, { userId: user?.id, campagneId: campagneActive?.id });
       queryClient.invalidateQueries({ queryKey: ['membres-liste', campagneActive?.id] });
       invalidateAll(queryClient);
-      setFeedback({ type: 'success', message: valeururActuelle ? 'Carte enregistrée : le membre peut cotiser.' : 'Carte retirée : le membre ne peut plus cotiser.' });
+      setFeedback({ type: 'success', message: valeurActuelle ? 'Carte enregistrée : le membre peut cotiser.' : 'Carte retirée : le membre ne peut plus cotiser.' });
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Erreur.' });
