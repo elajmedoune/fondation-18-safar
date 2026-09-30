@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2, Search, Filter } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -94,6 +94,7 @@ export default function Cotisations() {
   const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois', '');
   const [filtreObjectif, setFiltreObjectif] = usePersistedState('cot-fobj', 'tous');
   const [filtreTexte, setFiltreTexte] = usePersistedState('cot-ftexte', '');
+  const [showFilters, setShowFilters] = usePersistedState('cot-showFilters', false);
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -140,6 +141,10 @@ export default function Cotisations() {
   }, [allCotisations]);
 
   const filtreActif = filtreMois !== '' || filtreObjectif !== 'tous' || filtreTexte.trim() !== '';
+  // La recherche texte reste dans la barre, elle est un usage different d'un
+  // filtre : elle se tape en continu. Le compteur ne compte que les deux
+  // vrais filtres.
+  const activeFilterCount = (filtreMois ? 1 : 0) + (filtreObjectif !== 'tous' ? 1 : 0);
 
   // Fonction partagee : l'ecran affiche `cotisations` (50 derniers paiements)
   // et les exports utilisent `allCotisations`. Sans le meme filtre sur les
@@ -622,47 +627,87 @@ export default function Cotisations() {
         </div>
       )}
 
-      {/* Barre de filtres : une seule ligne, sans panneau a ouvrir. Les trois
-          champs restent visibles en permanence, un usage tresier ne doit pas
-          dependre d'un bouton. "Tout effacer" n'apparait que si un filtre est
-          actif, sinon il ajoute du bruit. */}
+      {/* Meme presentation que la page Membres : un bouton qui ouvre un
+          panneau. La recherche reste dans la barre de titre, un filtre ne se
+          tape pas en continu. */}
       {allCotisations.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-          <input
-            type="text"
-            value={filtreTexte}
-            onChange={(e) => setFiltreTexte(e.target.value)}
-            placeholder="Membre, lieu, note..."
-            className="flex-1 min-w-[140px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2.5 py-1.5 text-xs focus:border-primary-400 focus:outline-none"
-          />
-          <select
-            value={filtreMois}
-            onChange={(e) => setFiltreMois(e.target.value)}
-            className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-300 focus:border-primary-400 focus:outline-none"
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={filtreTexte}
+              onChange={(e) => setFiltreTexte(e.target.value)}
+              placeholder="Rechercher un membre, un lieu, une note..."
+              className={`w-full pl-10 pr-3 rounded-xl border bg-white/70 dark:bg-gray-900/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all ${
+                filtreTexte
+                  ? 'border-primary-300 dark:border-primary-700 focus:ring-primary-500/40'
+                  : 'border-gray-200 dark:border-gray-800 focus:border-primary-400'
+              }`}
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-all shrink-0 ${
+              showFilters || activeFilterCount > 0
+                ? 'border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                : 'border-gray-200 dark:border-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
           >
-            <option value="">Tous les mois</option>
-            {cotisationsParMois.map(([mois, rows]) => (
-              <option key={mois} value={mois}>{getMonthLabel(mois)} ({rows.length})</option>
-            ))}
-          </select>
-          <select
-            value={filtreObjectif}
-            onChange={(e) => setFiltreObjectif(e.target.value)}
-            className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-300 focus:border-primary-400 focus:outline-none"
-          >
-            <option value="tous">Objectif : tous</option>
-            <option value="atteint">Objectif atteint</option>
-            <option value="restant">Objectif restant</option>
-          </select>
-          {filtreActif && (
-            <button
-              onClick={() => { setFiltreMois(''); setFiltreObjectif('tous'); setFiltreTexte(''); }}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:text-primary-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            >
-              <X className="h-3 w-3" /> Effacer
-            </button>
-          )}
+            <Filter className="h-3.5 w-3.5" />
+            Filtres
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 h-4 w-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">{activeFilterCount}</span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {showFilters && allCotisations.length > 0 && (
+        <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Filtres avancés</span>
+            {activeFilterCount > 0 && (
+              <button onClick={() => { setFilterMois(''); setFiltreObjectif('tous'); setFiltreTexte(''); }} className="text-xs text-primary-600 hover:underline">
+                Tout effacer
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs text-gray-500">Mois de cotisation</span>
+              <select
+                value={filtreMois}
+                onChange={(e) => setFiltreMois(e.target.value)}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-xs focus:outline-none transition-all ${
+                  filtreMois ? 'border-primary-300 dark:border-primary-700' : 'border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <option value="">Tous les mois</option>
+                {cotisationsParMois.map(([mois, rows]) => (
+                  <option key={mois} value={mois}>{getMonthLabel(mois)} ({rows.length})</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-500">Objectif du membre</span>
+              <select
+                value={filtreObjectif}
+                onChange={(e) => setFiltreObjectif(e.target.value)}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-xs focus:outline-none transition-all ${
+                  filtreObjectif !== 'tous' ? 'border-primary-300 dark:border-primary-700' : 'border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <option value="tous">Tous</option>
+                <option value="atteint">Objectif atteint</option>
+                <option value="restant">Objectif restant</option>
+              </select>
+            </label>
+          </div>
+          <p className="text-[10px] text-gray-400">
+            Les filtres s'appliquent aussi à l'export PDF et Excel. Sur une campagne
+            dont les objectifs ne sont pas renseignés, le filtre objectif ne classe personne.
+          </p>
         </div>
       )}
 
