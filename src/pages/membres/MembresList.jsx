@@ -74,7 +74,10 @@ export default function MembresList() {
   const [filterMois, setFilterMois] = usePersistedState('mem-fmois', '');
   // 'tous' | 'officiels' | 'non-officiels' : pilote la liste ET l'export PDF,
   // ce qui donne les deux listes sans ecran supplementaire.
-  const [filtreCarte, setFiltreCarte] = usePersistedState('mem-fcarte', 'tous');
+  // Defaut 'officiels' : la liste sert a travailler les membres qui peuvent
+  // cotiser. Les membres sans carte restent accessibles via le filtre, sinon
+  // ils deviendraient invisibles et on croirait les avoir perdus.
+  const [filtreCarte, setFiltreCarte] = usePersistedState('mem-carte-officiel', 'officiels');
   const [carteBusy, setCarteBusy] = useState(null);
 
   const [mNom, setMNom] = usePersistedState('mem-nom', '');
@@ -426,7 +429,7 @@ export default function MembresList() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Filtres avancés</span>
               {activeFilterCount > 0 && (
-                <button onClick={() => { setFilterBureau(false); setFilterResp(false); setFilterObjectif(false); setFilterMois(''); }} className="text-xs text-primary-600 hover:underline">
+                <button onClick={() => { setFilterBureau(false); setFilterResp(false); setFilterObjectif(false); setFilterMois(''); setFiltreCarte('tous'); }} className="text-xs text-primary-600 hover:underline">
                   Tout effacer
                 </button>
               )}
@@ -451,9 +454,7 @@ export default function MembresList() {
                     {libelle}
                   </button>
                 ))}
-                {filtreCarte !== 'tous' && (
-                  <span className="text-xs text-gray-400">l'export PDF respecte ce filtre</span>
-                )}
+                <span className="text-xs text-gray-400">l'export PDF suit ce filtre</span>
               </div>
               <button
                 onClick={() => setFilterBureau(!filterBureau)}
