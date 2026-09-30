@@ -78,6 +78,32 @@ export const membresService = {
   // Nombre EXACT de membres de la CAMPAGNE : lignes campagne_membres de
   // cette campagne, hors comptes liés à un admin global (indépendant des
   // campagnes, il n'est pas un membre).
+  // Membres de la campagne split par achat de carte. Deux compteurs en un seul
+  // appel reseau : les deux questions sont posees ensemble au tableau de bord.
+  // carte_vendue peut etre absent tant que la migration n'est pas appliquee :
+  // dans ce cas on ne classe personne plutot que de compter tout en "officiel".
+  async countMembresParCarte(campagneId) {
+    const [rows, adminIds] = await Promise.all([
+      fetchAllPages(() =>
+        supabase
+          .from('campagne_membres')
+          .select('membre_id, carte_vendue, membre:membres!inner(user_id, carte_vendue)')
+          .eq('campagne_id', campagneId)
+      ),
+      this.getGlobalAdminUserIds(),
+    ]);
+    const reels = rows.filter((r) => !adminIds.has(r.membre?.user_id));
+    const classe = reels.filter((r) => typeof (r.membre?.carte_vendue ?? r.carte_vendue) === 'boolean');
+    return {
+      total: reels.length,
+      officiels: classe.filter((r) => (r.membre?.carte_vendue ?? r.carte_vendue) === true).length,
+      nonOfficiels: classe.filter((r) => (r.membre?.carte_vendue ?? r.carte_vendue) !== true).length,
+      // true quand la colonne n'existe pas encore : l'interface peut alors
+      // eviter d'afficher une repartition qui vaut n'importe quoi.
+      classable: classe.length > 0,
+    };
+  },
+
   async countMembres(campagneId) {
     const [rows, adminIds] = await Promise.all([
       fetchAllPages(() =>

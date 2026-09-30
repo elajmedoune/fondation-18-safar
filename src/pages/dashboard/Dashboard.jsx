@@ -50,7 +50,7 @@ function CustomPieTooltip({ active, payload }) {
   );
 }
 
-function StatCard({ icon: Icon, label, value, accent = 'primary' }) {
+function StatCard({ icon: Icon, label, value, accent = 'primary', hint }) {
   const accents = {
     primary: 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400',
     amber: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -66,6 +66,7 @@ function StatCard({ icon: Icon, label, value, accent = 'primary' }) {
       </div>
       <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{label}</p>
       <p className="text-base sm:text-xl font-semibold mt-0.5 text-gray-900 dark:text-white">{value}</p>
+      {hint && <p className="text-[10px] sm:text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">{hint}</p>}
     </div>
   );
 }
@@ -107,6 +108,12 @@ export default function Dashboard() {
   const { data: nbMembres } = useQuery({
     queryKey: ['dashboard-membres', campagneActive?.id],
     queryFn: () => membresService.countMembres(campagneActive.id),
+    enabled: !!campagneActive
+  });
+
+  const { data: repartitionCartes } = useQuery({
+    queryKey: ['dashboard-cartes', campagneActive?.id],
+    queryFn: () => membresService.countMembresParCarte(campagneActive.id),
     enabled: !!campagneActive
   });
 
@@ -237,6 +244,21 @@ export default function Dashboard() {
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                 <StatCard icon={Users} label="Membres" value={nbMembres ?? '—'} accent="primary" />
+                {repartitionCartes?.classable && (
+                  <Link
+                    to="/membres"
+                    title={`${repartitionCartes.officiels} avec carte · ${repartitionCartes.nonOfficiels} sans carte`}
+                    className="block focus:outline-none focus:ring-2 focus:ring-primary-500/40 rounded-2xl"
+                  >
+                    <StatCard
+                      icon={CreditCard}
+                      label="Avec carte"
+                      value={`${repartitionCartes.officiels}/${repartitionCartes.total}`}
+                      accent="emerald"
+                      hint={repartitionCartes.nonOfficiels > 0 ? `${repartitionCartes.nonOfficiels} sans carte` : undefined}
+                    />
+                  </Link>
+                )}
                 <StatCard icon={Wallet} label="Cotisations" value={formatFCFA(totalCotisations)} accent="emerald" />
                 <StatCard icon={HandHeart} label="Dons" value={formatFCFA(totalDons)} accent="sky" />
                 <StatCard icon={Coins} label="Quêtes" value={formatFCFA(totalQuetes)} accent="amber" />
@@ -369,6 +391,21 @@ export default function Dashboard() {
             <>
               <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <StatCard icon={Users} label="Membres" value={nbMembres ?? '—'} accent="primary" />
+                {repartitionCartes?.classable && (
+                  <Link
+                    to="/membres"
+                    title={`${repartitionCartes.officiels} avec carte · ${repartitionCartes.nonOfficiels} sans carte`}
+                    className="block focus:outline-none focus:ring-2 focus:ring-primary-500/40 rounded-2xl"
+                  >
+                    <StatCard
+                      icon={CreditCard}
+                      label="Avec carte"
+                      value={`${repartitionCartes.officiels}/${repartitionCartes.total}`}
+                      accent="emerald"
+                      hint={repartitionCartes.nonOfficiels > 0 ? `${repartitionCartes.nonOfficiels} sans carte` : undefined}
+                    />
+                  </Link>
+                )}
                 <StatCard icon={Wallet} label="Recettes" value={formatFCFA(totalRecettes)} accent="emerald" />
                 <StatCard icon={TrendingDown} label="Dépenses" value={formatFCFA(totalDepenses)} accent="red" />
                 <StatCard icon={Target} label="Solde" value={formatFCFA(solde)} accent={solde >= 0 ? 'sky' : 'red'} />
@@ -455,6 +492,21 @@ export default function Dashboard() {
             <>
               <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <StatCard icon={Users} label="Membres" value={nbMembres ?? '—'} accent="primary" />
+                {repartitionCartes?.classable && (
+                  <Link
+                    to="/membres"
+                    title={`${repartitionCartes.officiels} avec carte · ${repartitionCartes.nonOfficiels} sans carte`}
+                    className="block focus:outline-none focus:ring-2 focus:ring-primary-500/40 rounded-2xl"
+                  >
+                    <StatCard
+                      icon={CreditCard}
+                      label="Avec carte"
+                      value={`${repartitionCartes.officiels}/${repartitionCartes.total}`}
+                      accent="emerald"
+                      hint={repartitionCartes.nonOfficiels > 0 ? `${repartitionCartes.nonOfficiels} sans carte` : undefined}
+                    />
+                  </Link>
+                )}
                 <StatCard icon={Calendar} label="Réunions" value={prochaineReunion ? '1 à venir' : 'Aucune'} accent="amber" />
               </div>
 
