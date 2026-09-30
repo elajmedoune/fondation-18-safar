@@ -4,6 +4,10 @@ import { Link } from 'react-router-dom';
 import { Pencil, Search, Plus, X, Filter, Users, Shield, Target, CalendarX, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+
+// Vue par defaut de la liste : les membres ayant achete leur carte, donc ceux
+// qui peuvent cotiser. Les autres restent accessibles via le filtre.
+const CARTE_DEFAUT = 'officiels';
 import { useRole } from '../../hooks/useRole.js';
 import { membresService } from '../../services/membres.service.js';
 import { invalidateAll } from '../../lib/invalidateAll.js';
@@ -77,7 +81,7 @@ export default function MembresList() {
   // Defaut 'officiels' : la liste sert a travailler les membres qui peuvent
   // cotiser. Les membres sans carte restent accessibles via le filtre, sinon
   // ils deviendraient invisibles et on croirait les avoir perdus.
-  const [filtreCarte, setFiltreCarte] = usePersistedState('mem-carte-officiel', 'officiels');
+  const [filtreCarte, setFiltreCarte] = usePersistedState('mem-carte-officiel', CARTE_DEFAUT);
   const [carteBusy, setCarteBusy] = useState(null);
 
   const [mNom, setMNom] = usePersistedState('mem-nom', '');
@@ -184,8 +188,11 @@ export default function MembresList() {
     return list;
   }, [enriched, q, filterBureau, filterResp, filterObjectif, filterMois, filtreCarte]);
 
+  // Le filtre carte n'est PAS compte quand il est sur sa valeur par defaut :
+  // la vue par defaut n'est pas un filtre, sinon "Tout effacer" restait affiche
+  // en permanence et le bouton remettait la carte sur "Tous" au lieu du defaut.
   const activeFilterCount = [filterBureau, filterResp, filterObjectif, filterMois].filter(Boolean).length
-    + (filtreCarte !== 'tous' ? 1 : 0);
+    + (filtreCarte !== CARTE_DEFAUT ? 1 : 0);
 
   // Bascule rapide depuis la liste : un tresorier qui enregistre un paiement
   // au guichet coche la carte en meme temps, sans ouvrir la fiche.
@@ -429,7 +436,7 @@ export default function MembresList() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Filtres avancés</span>
               {activeFilterCount > 0 && (
-                <button onClick={() => { setFilterBureau(false); setFilterResp(false); setFilterObjectif(false); setFilterMois(''); setFiltreCarte('tous'); }} className="text-xs text-primary-600 hover:underline">
+                <button onClick={() => { setFilterBureau(false); setFilterResp(false); setFilterObjectif(false); setFilterMois(''); setFiltreCarte(CARTE_DEFAUT); }} className="text-xs text-primary-600 hover:underline">
                   Tout effacer
                 </button>
               )}
