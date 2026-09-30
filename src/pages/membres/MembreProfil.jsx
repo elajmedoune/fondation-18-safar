@@ -68,6 +68,10 @@ export default function MembreProfil() {
 
   const [editing, setEditing] = useState(false);
   const [carteVendue, setCarteVendue] = useState(false);
+  // Passer un payeur de "officiel" a "non officiel" est une decision
+  // consequente : elle bloque ses cotisations futures. Elle exige donc une
+  // confirmation explicite, pas un simple enregistrement.
+  const [confirmeSansCarte, setConfirmeSansCarte] = useState(false);
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [telephone, setTelephone] = useState('');
@@ -158,6 +162,7 @@ export default function MembreProfil() {
     setGroupeId(cm?.groupe?.id || '');
     setFonction(cm?.fonction || '');
     setCarteVendue(fiche.carte_vendue === true);
+    setConfirmeSansCarte(false);
     setPhotoUrl('');
     setPhotoPreview('');
     setEditing(true);
@@ -201,6 +206,11 @@ export default function MembreProfil() {
       setUploadingPhoto(false);
     }
   };
+
+  // Retrait de carte sur un membre qui a deja paye : on doit montrer le
+  // montant avant validation.
+  const retraitCarte = fiche?.carte_vendue === true && carteVendue === false && cotisations.length > 0;
+  const savingBlocked = retraitCarte && !confirmeSansCarte;
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -430,7 +440,7 @@ export default function MembreProfil() {
               <input
                 type="checkbox"
                 checked={carteVendue}
-                onChange={(e) => setCarteVendue(e.target.checked)}
+                onChange={(e) => { setCarteVendue(e.target.checked); setConfirmeSansCarte(false); }}
                 className="h-4 w-4 rounded border-gray-300 text-primary-700 focus:ring-primary-500"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -440,9 +450,33 @@ export default function MembreProfil() {
                 </span>
               </span>
             </label>
+            {retraitCarte && (
+              <div className="sm:col-span-2 rounded-xl border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/50 px-3 py-2.5 space-y-2">
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  Ce membre a {cotisations.length} cotisation{cotisations.length > 1 ? 's' : ''} pour{' '}
+                  {Number(totalCotisations || 0).toLocaleString('fr-FR')} FCFA.
+                </p>
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  Les cotisations déjà enregistrées sont conservées : l'argent est
+                  encaissé, cette case ne l'annule pas. En revanche, ce membre ne
+                  pourra plus cotiser.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={confirmeSansCarte}
+                    onChange={(e) => setConfirmeSansCarte(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-xs text-amber-900 dark:text-amber-200">
+                    Je confirme vouloir retirer la carte de ce membre
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
-          <button type="submit" disabled={saving} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
-            {saving ? 'Enregistrement...' : 'Enregistrer'}
+          <button type="submit" disabled={saving || savingBlocked} className="w-full rounded-xl bg-primary-700 text-white py-2.5 text-sm font-semibold hover:bg-primary-800 disabled:opacity-50 shadow-sm shadow-primary-700/20 transition-all">
+            {saving ? 'Enregistrement...' : savingBlocked ? 'Confirmation requise' : 'Enregistrer'}
           </button>
         </form>
       )}
