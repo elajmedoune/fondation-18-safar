@@ -149,6 +149,16 @@ export default function Cotisations() {
   const filtreActif = filtreMois !== '' || filtreObjectif !== 'tous' || filtreTexte.trim() !== '';
   // Mois en cours vide : le defaut ne doit pas laisser croire a une perte de
   // donnees. On propose de revenir a la vue complete.
+  const kpiLibelle = useMemo(() => {
+    const parts = [];
+    if (filtreMois) parts.push(getMonthLabel(filtreMois));
+    if (filtreObjectif === 'atteint') parts.push('objectif atteint');
+    if (filtreObjectif === 'restant') parts.push('objectif restant');
+    if (filtreTexte.trim()) parts.push(`« ${filtreTexte.trim()} »`);
+    if (parts.length === 0) return 'Campagne entière — tous les mois, tous les membres.';
+    return `Selon le filtre : ${parts.join(' · ')}.`;
+  }, [filtreMois, filtreObjectif, filtreTexte]);
+
   const moisCourantVide = filtreMois === getCurrentMonth() && cotisationsFiltrees.length === 0 && allCotisations.length > 0;
   // La recherche texte reste dans la barre, elle est un usage different d'un
   // filtre : elle se tape en continu. Le compteur ne compte que les deux
@@ -194,6 +204,20 @@ export default function Cotisations() {
 
   const cotisationsFiltrees = useMemo(() => appliquerFiltres(allCotisations), [appliquerFiltres, allCotisations]);
   const cotisationsAffichees = useMemo(() => appliquerFiltres(cotisations), [appliquerFiltres, cotisations]);
+
+  // Chiffres affiches dans les KPI et le sous-titre.
+  // On additionne la liste filtree, sans passer par filtreActif : la vue par
+  // defaut (mois courant) EST deja une restriction, et les chiffres doivent
+  // dire la meme chose que la liste sous les yeux.
+  const kpiTotal = useMemo(
+    () => cotisationsFiltrees.reduce((s, r) => s + Number(r.montant || 0), 0),
+    [cotisationsFiltrees]
+  );
+  const kpiCotisants = useMemo(
+    () => new Set(cotisationsFiltrees.map((c) => c.membre_id)).size,
+    [cotisationsFiltrees]
+  );
+  const kpiMoyenne = kpiCotisants > 0 ? kpiTotal / kpiCotisants : 0;
 
   const totalFiltre = useMemo(
     () => cotisationsFiltrees.reduce((s, r) => s + Number(r.montant || 0), 0),
@@ -509,7 +533,7 @@ export default function Cotisations() {
     <div className="space-y-5">
       <PageHeader
         title="Cotisations"
-        subtitle={`${cotisationsFiltrees.length} cotisation${cotisationsFiltrees.length !== 1 ? 's' : ''} · Total ${formatFCFA(filtreActif ? totalFiltre : total)}`}
+        subtitle={`${cotisationsFiltrees.length} cotisation${cotisationsFiltrees.length !== 1 ? 's' : ''} · Total ${formatFCFA(kpiTotal)}`}
         action={
           <div className={`grid gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <ExportMenu
@@ -552,19 +576,22 @@ export default function Cotisations() {
       {cotisationsFiltrees.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
-              Total{filtreActif ? ' (filtré)' : ''}
-            </p>
-            <p className="text-lg font-bold text-green-600 mt-1">{formatFCFA(filtreActif ? totalFiltre : total)}</p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
+            <p className="text-lg font-bold text-green-600 mt-1">{formatFCFA(kpiTotal)}</p>
           </div>
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Cotisants</p>
-            <p className="text-lg font-bold text-gray-900 dark:text-white mt-1">{new Set(cotisationsFiltrees.map(c => c.membre_id)).size}</p>
+            <p className="text-lg font-bold text-gray-900 dark:text-white mt-1">{kpiCotisants}</p>
           </div>
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Moyenne</p>
-            <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(new Set(cotisationsFiltrees.map(c => c.membre_id)).size > 0 ? (filtreActif ? totalFiltre : total) / new Set(cotisationsFiltrees.map(c => c.membre_id)).size : 0)}</p>
+            <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(kpiMoyenne)}</p>
           </div>
+          {/* Les chiffres sont toujours ceux de la vue filtree. La mention rend
+              impossible de les confondre avec le total de la campagne. */}
+          <p className="col-span-3 text-[10px] text-gray-400">
+            {kpiLibelle}
+          </p>
         </div>
       )}
 
