@@ -97,7 +97,9 @@ export default function Cotisations() {
   // a aller chercher le mois dans le filtre a chaque consultation.
   // La cle change : l'ancienne contenait deja "" (l'ancien defaut), memorise dans
   // le navigateur, qui primerait sur le nouveau defaut.
-  const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois-defaut', getCurrentMonth());
+  // Clé versionnée : le test en a laissé une ancienne dans le navigateur, et
+  // toute valeur mémorisée prime sur le défaut. "v2" repart d'une page propre.
+  const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois-v2', getCurrentMonth());
   const [filtreObjectif, setFiltreObjectif] = usePersistedState('cot-fobj', 'tous');
   const [filtreTexte, setFiltreTexte] = usePersistedState('cot-ftexte', '');
   const [showFilters, setShowFilters] = usePersistedState('cot-showFilters', false);
