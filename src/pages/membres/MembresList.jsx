@@ -233,7 +233,7 @@ export default function MembresList() {
     doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5); doc.line(14, 30, 196, 30);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Nom', 'Prenom', 'N° Membre', 'Telephone', 'Sexe', 'Groupe', 'Fonction', 'Cotisé', 'Objectif']],
+      head: [['#', 'Nom', 'Prenom', 'N° Membre', 'Telephone', 'Sexe', 'Groupe', 'Fonction', 'Cotisé', 'Objectif', 'Carte']],
       body: filtered.map((f, i) => [
         i + 1,
         f.membre?.nom || '',
@@ -244,7 +244,8 @@ export default function MembresList() {
         f.groupe?.nom || '',
         f.fonctionAffichee || '',
         formatFCFApdf(f.cotTotal),
-        formatFCFApdf(f.objectif)
+        formatFCFApdf(f.objectif),
+        f.membre?.carte_vendue === true ? 'Oui' : 'Non'
       ]),
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
@@ -271,6 +272,7 @@ export default function MembresList() {
       'Sexe': f.membre?.sexe || '',
       'Groupe': f.groupe?.nom || '',
       'Fonction': f.fonctionAffichee || '',
+      'Carte': f.membre?.carte_vendue === true ? 'Oui' : 'Non',
       'Cotisé': f.cotTotal,
       'Objectif': f.objectif
     })));
@@ -505,6 +507,17 @@ export default function MembresList() {
                       <span className="text-gray-500 dark:text-gray-400 text-xs truncate">
                         N° {f.membre?.numero_membre} {f.groupe?.nom ? `· ${f.groupe.nom}` : ''}
                       </span>
+                      {/* Achat de la carte : c'est ce qui distingue un membre
+                          officiel (autorise a cotiser) des autres. */}
+                      {f.membre?.carte_vendue === true ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          Carte achetée
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          Sans carte
+                        </span>
+                      )}
                       {f.fonctionAffichee && (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${BUREAU_BADGES[f._roleBureau] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                           {f.fonctionAffichee}
