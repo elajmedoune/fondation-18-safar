@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2 } from 'lucide-react';
+import { Plus, X, Wallet, Banknote, Calendar, Pencil, Trash2, Search } from 'lucide-react';
 import { useCampagneContext } from '../../contexts/CampagneContext.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useRole } from '../../hooks/useRole.js';
@@ -36,6 +36,10 @@ function formatFCFApdf(n) {
   const num = Math.round(Number(n) || 0);
   const withSpaces = Math.abs(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return (num < 0 ? '-' : '') + withSpaces + ' FCFA';
+}
+
+function getObjectifMembre(sexe, campagne) {
+  return sexe === 'feminin' ? Number(campagne?.cotisation_femme || 0) : Number(campagne?.cotisation_homme || 0);
 }
 
 function getMonthLabel(yyyymm) {
@@ -85,6 +89,11 @@ export default function Cotisations() {
   const [modePaiement, setModePaiement] = usePersistedState('cot-mode', 'especes');
   const [moisCotisation, setMoisCotisation] = usePersistedState('cot-mois', getCurrentMonth());
   const [note, setNote] = usePersistedState('cot-note', '');
+  // Filtres de la liste. Discrets mais suffisants : un tresorier cherche
+  // toujours "le mois de X" ou "qui doit encore payer".
+  const [filtreMois, setFiltreMois] = usePersistedState('cot-fmois', '');
+  const [filtreObjectif, setFiltreObjectif] = usePersistedState('cot-fobj', 'tous');
+  const [filtreTexte, setFiltreTexte] = usePersistedState('cot-ftexte', '');
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -119,9 +128,63 @@ export default function Cotisations() {
     enabled: !!ca
   });
 
+  // Cumul par membre : c'est ce qui permet de repondre a "a-t-il atteint son
+  // objectif ?", la page ne listant que des paiements.
+  const cumulParMembre = useMemo(() => {
+    const map = {};
+    for (const c of allCotisations) {
+      if (!c.membre_id) continue;
+      map[c.membre_id] = (map[c.membre_id] || 0) + Number(c.montant || 0);
+    }
+    return map;
+  }, [allCotisations]);
+
+  const filtreActif = filtreMois !== '' || filtreObjectif !== 'tous' || filtreTexte.trim() !== '';
+
+  // Fonction partagee : l'ecran affiche `cotisations` (50 derniers paiements)
+  // et les exports utilisent `allCotisations`. Sans le meme filtre sur les
+  // deux, l'ecran et le PDF montreraient des choses differentes.
+  const appliquerFiltres = useCallback((list) => {
+    let out = list;
+    if (filtreMois) {
+      out = out.filter((c) => (c.mois_cotisation || c.date_paiement?.slice(0, 7) || 'Non daté') === filtreMois);
+    }
+    const terme = filtreTexte.trim().toLowerCase();
+    if (terme) {
+      out = out.filter((c) => {
+        const m = c.membre;
+        return (
+          (m?.nom || '').toLowerCase().includes(terme) ||
+          (m?.prenom || '').toLowerCase().includes(terme) ||
+          (m?.numero_membre || '').toLowerCase().includes(terme) ||
+          (c.lieu || '').toLowerCase().includes(terme) ||
+          (c.note || '').toLowerCase().includes(terme)
+        );
+      });
+    }
+    if (filtreObjectif !== 'tous') {
+      out = out.filter((c) => {
+        const objectif = getObjectifMembre(c.membre?.sexe, ca);
+        const cumul = cumulParMembre[c.membre_id] || 0;
+        // Sans objectif renseigne (campagne non configuree), on ne classe pas.
+        if (objectif <= 0) return true;
+        return filtreObjectif === 'atteint' ? cumul >= objectif : cumul < objectif;
+      });
+    }
+    return out;
+  }, [filtreMois, filtreObjectif, filtreTexte, cumulParMembre, ca]);
+
+  const cotisationsFiltrees = useMemo(() => appliquerFiltres(allCotisations), [appliquerFiltres, allCotisations]);
+  const cotisationsAffichees = useMemo(() => appliquerFiltres(cotisations), [appliquerFiltres, cotisations]);
+
+  const totalFiltre = useMemo(
+    () => cotisationsFiltrees.reduce((s, r) => s + Number(r.montant || 0), 0),
+    [cotisationsFiltrees]
+  );
+
   const cotisationsParMois = useMemo(() => {
     const map = {};
-    allCotisations.forEach((c) => {
+    cotisationsFiltrees.forEach((c) => {
       const key = c.mois_cotisation || c.date_paiement?.slice(0, 7) || 'Non daté';
       if (!map[key]) map[key] = [];
       map[key].push(c);
@@ -143,7 +206,7 @@ export default function Cotisations() {
       if (b === 'Non daté') return -1;
       return a < b ? -1 : a > b ? 1 : 0;
     });
-  }, [allCotisations]);
+  }, [cotisationsFiltrees]);
 
   const resetForm = () => { setMembreSelectionne(null); setQuery(''); setSansCarte([]); setMontant(''); setModePaiement('especes'); setMoisCotisation(getCurrentMonth()); setNote(''); setFeedback(null); };
 
@@ -320,14 +383,16 @@ export default function Cotisations() {
       loadLogoBase64(), import('jspdf'), import('jspdf-autotable')
     ]);
 
-    const totalAll = allCotisations.reduce((s, r) => s + Number(r.montant), 0);
+    // L'export suit les filtres : un PDF qui sort des chiffres Different de
+    // l'ecran envoie le tresorier dans de mauvaises directions.
+    const totalAll = totalFiltre;
     const doc = new jsPDF();
 
     addLogoToDoc(doc, logo);
     doc.setFontSize(16); doc.setTextColor(15, 118, 110);
     doc.text(`Cotisations - ${ca.nom || ca.annee}`, 14, 18);
     doc.setFontSize(10); doc.setTextColor(100);
-    doc.text(`${allCotisations.length} cotisation(s) - Total : ${formatFCFApdf(totalAll)}`, 14, 25);
+    doc.text(`${cotisationsFiltrees.length} cotisation(s) - Total : ${formatFCFApdf(totalAll)}`, 14, 25);
     doc.setDrawColor(15, 118, 110); doc.setLineWidth(0.5); doc.line(14, 30, 196, 30);
 
     let startY = 40;
@@ -426,7 +491,7 @@ export default function Cotisations() {
     <div className="space-y-5">
       <PageHeader
         title="Cotisations"
-        subtitle={`${allCotisations.length} cotisation${allCotisations.length !== 1 ? 's' : ''} · Total ${formatFCFA(total)}`}
+        subtitle={`${cotisationsFiltrees.length} cotisation${cotisationsFiltrees.length !== 1 ? 's' : ''} · Total ${formatFCFA(filtreActif ? totalFiltre : total)}`}
         action={
           <div className={`grid gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-center ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <ExportMenu
@@ -466,19 +531,21 @@ export default function Cotisations() {
       />
 
       {/* Stats */}
-      {allCotisations.length > 0 && (
+      {cotisationsFiltrees.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
-            <p className="text-lg font-bold text-green-600 mt-1">{formatFCFA(total)}</p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+              Total{filtreActif ? ' (filtré)' : ''}
+            </p>
+            <p className="text-lg font-bold text-green-600 mt-1">{formatFCFA(filtreActif ? totalFiltre : total)}</p>
           </div>
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Cotisants</p>
-            <p className="text-lg font-bold text-gray-900 dark:text-white mt-1">{new Set(allCotisations.map(c => c.membre_id)).size}</p>
+            <p className="text-lg font-bold text-gray-900 dark:text-white mt-1">{new Set(cotisationsFiltrees.map(c => c.membre_id)).size}</p>
           </div>
           <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 p-4 shadow-sm">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Moyenne</p>
-            <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(allCotisations.length > 0 ? total / new Set(allCotisations.map(c => c.membre_id)).size : 0)}</p>
+            <p className="text-lg font-bold text-primary-600 mt-1">{formatFCFA(new Set(cotisationsFiltrees.map(c => c.membre_id)).size > 0 ? (filtreActif ? totalFiltre : total) / new Set(cotisationsFiltrees.map(c => c.membre_id)).size : 0)}</p>
           </div>
         </div>
       )}
@@ -555,18 +622,75 @@ export default function Cotisations() {
         </div>
       )}
 
+      {/* Barre de filtres : une seule ligne, sans panneau a ouvrir. Les trois
+          champs restent visibles en permanence, un usage tresier ne doit pas
+          dependre d'un bouton. "Tout effacer" n'apparait que si un filtre est
+          actif, sinon il ajoute du bruit. */}
+      {allCotisations.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+          <input
+            type="text"
+            value={filtreTexte}
+            onChange={(e) => setFiltreTexte(e.target.value)}
+            placeholder="Membre, lieu, note..."
+            className="flex-1 min-w-[140px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2.5 py-1.5 text-xs focus:border-primary-400 focus:outline-none"
+          />
+          <select
+            value={filtreMois}
+            onChange={(e) => setFiltreMois(e.target.value)}
+            className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-300 focus:border-primary-400 focus:outline-none"
+          >
+            <option value="">Tous les mois</option>
+            {cotisationsParMois.map(([mois, rows]) => (
+              <option key={mois} value={mois}>{getMonthLabel(mois)} ({rows.length})</option>
+            ))}
+          </select>
+          <select
+            value={filtreObjectif}
+            onChange={(e) => setFiltreObjectif(e.target.value)}
+            className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/50 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-300 focus:border-primary-400 focus:outline-none"
+          >
+            <option value="tous">Objectif : tous</option>
+            <option value="atteint">Objectif atteint</option>
+            <option value="restant">Objectif restant</option>
+          </select>
+          {filtreActif && (
+            <button
+              onClick={() => { setFiltreMois(''); setFiltreObjectif('tous'); setFiltreTexte(''); }}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:text-primary-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <X className="h-3 w-3" /> Effacer
+            </button>
+          )}
+        </div>
+      )}
+
       {loadingList ? (
         <div className="flex items-center justify-center py-12">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-700 border-t-transparent" />
         </div>
-      ) : cotisations.length === 0 ? (
+      ) : cotisationsAffichees.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Wallet className="h-10 w-10 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Aucune cotisation enregistrée.</p>
+          <p className="text-sm">
+            {filtreActif ? 'Aucune cotisation ne correspond aux filtres.' : 'Aucune cotisation enregistrée.'}
+          </p>
+          {filtreActif && (
+            <p className="text-xs mt-1.5">
+              Filtres :{' '}
+              {[
+                filtreMois && getMonthLabel(filtreMois),
+                filtreObjectif === 'atteint' && 'objectif atteint',
+                filtreObjectif === 'restant' && 'objectif restant',
+                filtreTexte.trim() && `"${filtreTexte.trim()}"`,
+              ].filter(Boolean).join(', ')}
+            </p>
+          )}
         </div>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/50 rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm overflow-hidden">
-          {cotisations.map((c) => {
+          {cotisationsAffichees.map((c) => {
             const moisLabel = c.mois_cotisation ? getMonthLabel(c.mois_cotisation) : null;
             const isLate = moisLabel && c.date_paiement && c.mois_cotisation !== c.date_paiement?.slice(0, 7);
             return (

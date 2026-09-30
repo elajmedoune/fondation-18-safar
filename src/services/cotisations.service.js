@@ -5,7 +5,7 @@ export const cotisationsService = {
   async listByCampagne(campagneId, limit = 50) {
     const { data, error } = await supabase
       .from('cotisations')
-      .select('*, membre:membres(nom, prenom, numero_membre, photo_url)')
+      .select('*, membre:membres(nom, prenom, numero_membre, photo_url, sexe)')
       .eq('campagne_id', campagneId)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -16,7 +16,7 @@ export const cotisationsService = {
   async listAllByCampagne(campagneId) {
     const { data, error } = await supabase
       .from('cotisations')
-      .select('*, membre:membres(nom, prenom, numero_membre, photo_url)')
+      .select('*, membre:membres(nom, prenom, numero_membre, photo_url, sexe)')
       .eq('campagne_id', campagneId)
       .order('created_at', { ascending: true });
     if (error) throw error;
@@ -44,7 +44,7 @@ export const cotisationsService = {
         mois_cotisation: moisCotisation || null,
         enregistre_par: userId
       })
-      .select('*, membre:membres(nom, prenom, numero_membre, photo_url)')
+      .select('*, membre:membres(nom, prenom, numero_membre, photo_url, sexe)')
       .single();
     if (error) throw error;
     await auditLogsService.log({
@@ -71,7 +71,7 @@ export const cotisationsService = {
       })
       .eq('id', id)
       .eq('campagne_id', campagneId)
-      .select('*, membre:membres(nom, prenom, numero_membre, photo_url)')
+      .select('*, membre:membres(nom, prenom, numero_membre, photo_url, sexe)')
       .single();
     if (error) throw error;
     if (userId) {
